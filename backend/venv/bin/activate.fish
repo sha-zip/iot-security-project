@@ -33,7 +33,11 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
+<<<<<<< HEAD
 set -gx VIRTUAL_ENV /home/sha/projet/backend/venv
+=======
+set -gx VIRTUAL_ENV /home/nad/project/backend/venv
+>>>>>>> 039e4ea (Initial implementation de iot secure archi)
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/"bin $PATH

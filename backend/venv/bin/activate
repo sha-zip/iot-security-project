@@ -38,7 +38,11 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
+<<<<<<< HEAD
 VIRTUAL_ENV=/home/sha/projet/backend/venv
+=======
+VIRTUAL_ENV=/home/nad/project/backend/venv
+>>>>>>> 039e4ea (Initial implementation de iot secure archi)
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
