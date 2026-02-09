@@ -8,6 +8,6 @@ services:
       - "8883:8883"
      volumes:
       - ../platform/mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - ../platform/certs:/mosquitto/certs
+      - ../pki:/mosquitto/certs
      restart: unless-stopped
 
