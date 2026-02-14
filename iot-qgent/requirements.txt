@@ -1,2 +1,0 @@
-python-pkcs11
-requests
