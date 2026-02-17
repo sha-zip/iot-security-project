@@ -23,3 +23,10 @@ certs/
 .DS_Store
 .vscode/
 .idea/ 
+
+# Python venv
+venv/
+.venv/
+
+# Public keys atifacts
+*.pem/n*.der/n
