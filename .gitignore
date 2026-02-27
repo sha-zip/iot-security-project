@@ -1,6 +1,8 @@
 #Python
 __pycache__/
 *.py[cod]
+*.pyc
+platform/backend/venv
 
 #Virtualenv
 venv/
@@ -30,3 +32,15 @@ venv/
 
 # Public keys atifacts
 *.pem/n*.der/n
+
+#PKI - cles privees 
+pki/*.key
+pki/ca.key
+pki/index.txt
+pki/index.txt.attr
+pki/index.txt.old
+pki/serial
+pki/serial.old
+pki/*.old
+pki/*.pem
+pki/ca.crl 
