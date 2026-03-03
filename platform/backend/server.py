@@ -1,33 +1,18 @@
-<<<<<<< HEAD
-from flask import Flask, request 
-from cryptography.hazmat.primitives import hashes, serialization 
-from cryptography.hazmat.primitives.asymmetric import padding 
-app = Flask(__name__)
-with open("iot_pubkey.pem", "rb") as f :
-	public_key = serialization.load_pem_public_key(f.read())
-@app.route("/auth" , methods=["POST"])
-def auth():
-	message= request.data 
-	signature= bytes.fromhex(request.headers["X-signature"])
-	try:
-		public_key.verify (signature, message , padding.PKCS1v15(),hashes.SHA256())
-		return "AUTH OK \n"
-	except Exception:
-		return "AUTH FAILED \n" , 401
-if __name__== "__main__":
-	app.run()
-=======
+
 from flask import Flask, request
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
+from device_registry import load_registry, can_publish
 print ("=====SERVER STARTING====")
 
 app = Flask(__name__)
 
+registry= load_registry()
+
 with open("iot_pubkey2.pem","rb") as f:
     public_key = serialization.load_pem_public_key(f.read())
 print ("PUBLIC KEY LOADED")
-print (public_key)
+
 
 @app.route("/auth", methods=["POST"])
 def auth():
@@ -35,16 +20,27 @@ def auth():
     message = request.data
     print ("MESSAGE:",message)
 
-    signature = bytes.fromhex(request.headers["X-Signature"])
-    print ("SIGNATURE:", signature.hex())
+    sig_hex = request.headers.get("X-Signature")
+    device_id= request.headers.get("X-Device-ID")
+    topic= request.headers.get("X-Topic")
+    if not device_id or not topic:
+     return ";issing X-Device or X-Topic\n", 400
+    if not sig_hex:
+     return "Missing X-Signature\n", 400
+
+    try:
+     signature = bytes.fromhex(request.headers["X-Signature"])
+    except ValueError : 
+     return "Invalid X-Signature (not hex)\n", 400
+ 
     try:
      public_key.verify(signature,message,padding.PKCS1v15(),hashes.SHA256())
-     return "AUTH OK\n"
     except Exception:
      return "AUTH FAILED\n", 401
-     
+    if not can_publish(device_id, topic, registry):
+     return "DEVICE NOT AUTHORIZED FOR THIS TOPIC\n", 403 
+    return "AUTH OK\n"
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0",port=5000)
 
->>>>>>> 039e4ea (Initial implementation de iot secure archi)
