@@ -10,4 +10,12 @@ services:
       - ../platform/mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf
       - ../pki:/mosquitto/certs:ro
      restart: unless-stopped
-
+    
+    backend:
+     build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+     container_name: platform-backend
+     ports:
+      - "5000:5000"
+     restart: unless-stopped

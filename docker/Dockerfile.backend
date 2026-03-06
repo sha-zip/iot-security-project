@@ -1,0 +1,15 @@
+# docker/Dockerfile.backend
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Installer les dependances
+COPY platform/backend/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# Copier le code backend (inclut iot_pubkey2.pem)
+COPY platform/backend/ /app/
+
+EXPOSE 5000
+
+CMD ["python", "server.py"]
