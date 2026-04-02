@@ -1,0 +1,26 @@
+[ ca ] 
+default_ca=local_ca
+
+[ local_ca ]
+
+dir=.
+database=index.txt
+serial=serial
+new_certs_dir=.
+certificate=ca.crt
+private_key=ca.key
+default_days=365
+default_crl_days=30
+default_md=sha256
+policy=policy_anything
+[ policy_anything ]
+countryName= optional
+stateOrProvinceName=optional
+organizationName=optional
+organizationalUnitName=optional
+commonName=supplied
+emailAddress=optional
+[ client_ext ]
+basicConstraints=CA:FALSE
+keyUsage=digitalSignature,keyAgreement
+extendedKeyUsage=clientAuth
