@@ -35,6 +35,8 @@ venv/
 
 #PKI - cles privees 
 pki/*.key
+pki/*.csr
+pki/*.srl
 pki/ca.key
 pki/index.txt
 pki/index.txt.attr
@@ -44,3 +46,6 @@ pki/serial.old
 pki/*.old
 pki/*.pem
 pki/ca.crl 
+
+#Docker
+*.pid

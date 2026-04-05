@@ -24,3 +24,8 @@ emailAddress=optional
 basicConstraints=CA:FALSE
 keyUsage=digitalSignature,keyAgreement
 extendedKeyUsage=clientAuth
+[ server_ext ]
+basicConstraints=CA:FALSE
+keyUsage=keyEncipherment,dataEncipherment
+extendedKeyUsage=serverAuth
+subjectALtName=DNS:mosquitto,DNS:localhost,IP:127.0.0.1
