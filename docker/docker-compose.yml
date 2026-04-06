@@ -19,3 +19,13 @@ services:
      ports:
       - "5000:5000"
      restart: unless-stopped
+
+    iot-agent:
+     build:
+      context: ..
+      dockerfile: docker/Dockerfile.iot
+     container_name: iot-agent
+     depends_on:
+      - mqtt
+      - backend
+     restart: unless-stopped
