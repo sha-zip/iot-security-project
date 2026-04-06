@@ -6,7 +6,7 @@ import hmac
 import hashlib
 import json
 
-BACKEND_URL = os.environ.get("BACKEND_URL", "https://127.0.0.1:8000")
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000")
 SECRET = os.environ["SECRET_KEY"].encode()
 DEVICE_ID = os.environ.get("DEVICE_ID", "iot-agent-01")
 

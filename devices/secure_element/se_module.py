@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 PKCS11_MODULE = os.environ.get("PKCS11_MODULE", "/usr/lib/softhsm/libsofthsm2.so")
 TOKEN_LABEL = os.environ.get("SE_TOKEN_LABEL", "IoT_Secure_Element")
 KEY_LABEL = os.environ.get("SE_KEY_LABEL", "IoT_RSA_Key")
-USER_PIN = os.environ.get("SE_USER_PIN", "1234")
+USER_PIN = os.environ.get("SE_USER_PIN", "0000")
 DEVICE_ID = os.environ.get("DEVICE_ID", "iot-agent-01")
 
 
@@ -109,3 +109,14 @@ def check_key_exists():
     except Exception as e:
         logging.error(" Erreur vérification clé: %s", e)
         return False
+
+if __name__ == "__main__":
+	data = b"test message"
+	try :
+		signature = sign_data(data)
+		print("Signature OK :", signature.hex())
+	except Exception as e :
+		print ("Erreur :" , e)
+if __name__ == "__main__":
+	csr = generate_csr()
+	print(csr.decode())
