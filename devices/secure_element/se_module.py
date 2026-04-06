@@ -10,16 +10,16 @@ logging.basicConfig(level=logging.INFO)
 
 PKCS11_MODULE = os.environ.get("PKCS11_MODULE" , "/usr/lib/softhsm/libsofthsm2.so")
 TOKEN_LABEL = os.environ.get("SE_TOKEN_LABEL", "IoT_Secure_Element")
-KEY_LABEL = os.environ.get("SE_KEY_LABLE", "IoT_RSA_Key")
+KEY_LABEL = os.environ.get("SE_KEY_LABEL", "IoT_RSA_Key")
 USER_PIN = os.environ.get("SE_USER_PIN")
 DEVICE_ID= os.environ.get("DEVICE_ID", "iot-agent-01")
 
 def sign_data(data: bytes) -> bytes:
 	if not isinstance(data, bytes):
-		raise TypeError("Donnees vides")
+		raise TypeError("sign_data attend des bytes")
 
 	if USER_PIN is None:
-		raise RuntimeError("PIN non defini)
+		raise RuntimeError("PIN non defini")
 
 	try:
 		hsm= lib(PKCS11_MODULE)
@@ -30,7 +30,7 @@ def sign_data(data: bytes) -> bytes:
 			signature = private_key.sign( data, mechanism= Mechanism.SHA256_RSA_PKCS )
 			logging.info("Signature reussie pour cle '%s' ", KEY_LABEL)
 			return signature 
-	except pkcs11.exceptions.PinIncorect:
+	except pkcs11.exceptions.PinIncorrect:
 		logging.error("PIN incorrect pour le token '%s' ", TOKEN_LABEL)
 		raise RuntimeError("PIN PKCS11 incorrect")
 	except pkcs11.exceptions.PKCS11Error as e:
