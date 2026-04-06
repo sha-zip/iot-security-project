@@ -1,0 +1,13 @@
+# Dockerfile.iot
+FROM python:3.12-slim
+
+#Instqller les dependqnces
+Copy devices/iot-agent/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir r /app/requirements.txt
+
+#Copier le code de l'agent IoT
+COPY devices/iot-agent/ /app/
+#Copier les certificaat PKI necessaires
+COPY pki/ /app/certs/
+
+CMD [ "python", "agent.py"]
