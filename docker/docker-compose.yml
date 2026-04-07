@@ -1,6 +1,20 @@
 version: "3.8"
 
 services:
+    influxdb:
+     image: influxdb:2.7
+     container_name: influxdb
+     ports:
+       - "8086:8086"
+     volumes:
+      - influxdb-data:/var/lib/influxdb2
+     environment:
+      - DOCKER_INFLUXDB_INT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=nadine
+      - DOCKER_INFLUXDB_INIT_PASSWORD=nadine2004
+      - DOCKER_INFLUXDB_INIT_ORG=iot_org
+      - DOCKER_INFLUXDB_INIT_BUCKER=iot_bucket
+      - DOCKER_INFLUX_INIT_QDMIN_TOKEN=mytoken123
     mqtt:
      image: eclipse-mosquitto:2
      container_name: mqtt-broker
@@ -29,3 +43,6 @@ services:
       - mqtt
       - backend
      restart: unless-stopped
+
+volumes:
+    influxdb-data:
