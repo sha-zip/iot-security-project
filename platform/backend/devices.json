@@ -1,14 +1,10 @@
 {
-    "devices": {
-     "device-001" : {
-       "status": "active" ,
-       "allowed_publish": ["devices/device-001/telemetry"],
-       "allowed_subscribe": ["devices/device-001/commands"]
-     },
-     "device--02": {
-      "status": "revoked",
-      "allowed_publish": [],
-      "allowed_subscribe": []
-     }
+  "devices": {
+    "device001": {
+      "status": "active",
+      "enrolled": false,
+      "allowed_publish": ["sensor/data"],
+      "allowed_subscribe": ["sensor/cmd"]
     }
+  }
 }
