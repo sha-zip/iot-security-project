@@ -1,157 +1,142 @@
 from flask import Flask, request, Response
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography import x509
 from cryptography.x509.oid import NameOID
-from device_registry import load_registry, can_publish
-import datetime
+from cryptography.hazmat.primitives.asymmetric import rsa
+import subprocess
+import os
+import re
+import logging
+import tempfile
+import hmac
+import secrets
 
-print("===== SERVER STARTING =====")
+from device_registry import load_registry, is_device_active, mark_device_enrolled
+
+# ================= CONFIG =================
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-registry = load_registry()
 
-# ===================== LOAD KEYS =====================
+CA_CERT       = os.environ.get("CA_CERT", "ca_cert.pem")
+PKCS11_KEY    = os.environ.get("PKCS11_KEY", "pkcs11:token=IoT_Secure_Element;object=ca-key;type=private")
+CERT_VALIDITY = int(os.environ.get("CERT_VALIDITY_DAYS", "365"))
+API_KEY       = os.environ.get("API_KEY")
 
-# Clé publique (pour auth actuelle - HMAC/RSA)
-with open("iot_pubkey2.pem", "rb") as f:
-    public_key = serialization.load_pem_public_key(f.read())
+if not os.path.exists(CA_CERT):
+    raise FileNotFoundError(f"CA certificate introuvable: {CA_CERT}")
 
-# Clé privée CA (signature certificats)
-with open("iot_privkey.pem", "rb") as f:
-    ca_private_key = serialization.load_pem_private_key(f.read(), password=None)
+if not API_KEY:
+    raise EnvironmentError("API_KEY non définie")
 
-print(" Keys loaded")
+# ================= HELPERS =================
+def is_device_authorized(device_id):
+    registry = load_registry()
+    return is_device_active(registry, device_id)
 
-# ===================== ROUTE AUTH =====================
+def check_api_key(req):
+    provided = req.headers.get("X-API-KEY", "")
+    return hmac.compare_digest(provided, API_KEY)
 
-@app.route("/auth", methods=["POST"])
-def auth():
-    print("📥 AUTH REQUEST RECEIVED")
-
-    message = request.data
-    sig_hex = request.headers.get("X-Signature")
-    device_id = request.headers.get("X-Device-ID")
-    topic = request.headers.get("X-Topic")
-
-    if not device_id or not topic:
-        return "Missing X-Device-ID or X-Topic\n", 400
-
-    if not sig_hex:
-        return "Missing X-Signature\n", 400
-
-    try:
-        signature = bytes.fromhex(sig_hex)
-    except ValueError:
-        return "Invalid signature format\n", 400
-
-    # Vérification signature
-    try:
-        public_key.verify(
-            signature,
-            message,
-            padding.PKCS1v15(),
-            hashes.SHA256()
-        )
-    except Exception:
-        return "AUTH FAILED\n", 401
-
-    # Vérification autorisation
-    if not can_publish(device_id, topic, registry):
-        return "NOT AUTHORIZED\n", 403
-
-    return "AUTH OK\n", 200
-
-
-# ===================== ROUTE ENROLL =====================
-
+# ================= ROUTE =================
 @app.route("/enroll", methods=["POST"])
 def enroll():
-    print(" CSR RECEIVED")
+
+    if not check_api_key(request):
+        return "Unauthorized", 401
+
+    csr_data = request.data
+
+    if not csr_data:
+        return "CSR vide", 400
+
+    # 🔥 Protection DoS
+    if len(csr_data) > 10 * 1024:
+        return "CSR trop volumineuse", 400
 
     try:
-        csr_data = request.data
-
-        if not csr_data:
-            return "Missing CSR\n", 400
-
-        # Charger CSR
         csr = x509.load_pem_x509_csr(csr_data)
+    except Exception:
+        return "CSR invalide ou malformée", 400
 
-        # Vérifier signature CSR
-        if not csr.is_signature_valid:
-            return "Invalid CSR signature\n", 400
+    if not csr.is_signature_valid:
+        return "Signature CSR invalide", 400
 
-        print(" CSR valid")
+    public_key = csr.public_key()
 
-        # ================= CA IDENTITY =================
-        issuer = x509.Name([
-            x509.NameAttribute(NameOID.COMMON_NAME, "IoT-CA"),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "IoT_Project"),
-            x509.NameAttribute(NameOID.COUNTRY_NAME, "TN"),
-        ])
+    # 🔐 RSA uniquement
+    if not isinstance(public_key, rsa.RSAPublicKey):
+        return "Type de clé non supporté (RSA requis)", 400
 
-        # ================= CERT GENERATION =================
-        cert_builder = (
-            x509.CertificateBuilder()
-            .subject_name(csr.subject)
-            .issuer_name(issuer)  # ✅ corrigé
-            .public_key(csr.public_key())
-            .serial_number(x509.random_serial_number())
-            .not_valid_before(datetime.datetime.utcnow())
-            .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=365))
-        )
+    if public_key.key_size < 2048:
+        return "Clé trop faible (min 2048 bits)", 400
 
-        # ================= EXTENSIONS =================
-        cert_builder = cert_builder.add_extension(
-            x509.BasicConstraints(ca=False, path_length=None),
-            critical=True
-        )
+    try:
+        device_id = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+    except IndexError:
+        return "Common Name manquant", 400
 
-        cert_builder = cert_builder.add_extension(
-            x509.KeyUsage(
-                digital_signature=True,
-                key_encipherment=True,
-                content_commitment=False,
-                data_encipherment=False,
-                key_agreement=False,
-                key_cert_sign=False,
-                crl_sign=False,
-                encipher_only=False,
-                decipher_only=False
-            ),
-            critical=True
-        )
+    device_id = re.sub(r'[^a-zA-Z0-9_-]', '_', device_id)
 
-        cert_builder = cert_builder.add_extension(
-            x509.SubjectAlternativeName([
-                x509.DNSName("iot-device")
-            ]),
-            critical=False
-        )
+    logger.info(f"[ENROLL] device={device_id} ip={request.remote_addr}")
 
-        # ================= SIGNATURE =================
-        cert = cert_builder.sign(
-            private_key=ca_private_key,
-            algorithm=hashes.SHA256()
-        )
+    if not is_device_authorized(device_id):
+        logger.warning(f"Device non autorisé: {device_id}")
+        return f"Device '{device_id}' non autorisé", 403
 
-        cert_pem = cert.public_bytes(serialization.Encoding.PEM)
+    csr_path = None
+    crt_path = None
 
-        print("Certificate generated and signed")
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".csr") as csr_file:
+            csr_file.write(csr_data)
+            csr_path = csr_file.name
+
+        crt_path = csr_path.replace(".csr", ".crt")
+
+        serial = hex(secrets.randbits(64))
+
+        try:
+            result = subprocess.run([
+                "openssl", "x509", "-req",
+                "-in", csr_path,
+                "-CA", CA_CERT,
+                "-CAkey", PKCS11_KEY,
+                "-set_serial", serial,
+                "-CAcreateserial",
+                "-out", crt_path,
+                "-days", str(CERT_VALIDITY),
+                "-sha256",
+                "-provider", "pkcs11",
+                "-provider", "default"
+            ], capture_output=True, timeout=10)
+        except subprocess.TimeoutExpired:
+            logger.error("OpenSSL timeout")
+            return "Timeout lors de la signature", 500
+
+        if result.returncode != 0:
+            logger.error(result.stderr.decode())
+            return "Erreur lors de la signature", 500
+
+        with open(crt_path, "rb") as f:
+            cert_pem = f.read()
+
+        mark_device_enrolled(device_id)
+
+        logger.info(f"[SUCCESS] Certificat généré pour {device_id}")
 
         return Response(
             cert_pem,
             status=200,
-            mimetype="application/x-pem-file"
+            mimetype="application/x-pem-file",
+            headers={"Content-Disposition": f"attachment; filename={device_id}.crt"}
         )
 
-    except Exception as e:
-        print(f" ENROLL ERROR: {e}")
-        return f"Error: {e}\n", 500
+    finally:
+        for path in [csr_path, crt_path]:
+            if path and os.path.exists(path):
+                os.remove(path)
 
-
-# ===================== MAIN =====================
-
+# ================= MAIN =================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000, debug=True)
