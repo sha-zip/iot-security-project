@@ -14,7 +14,7 @@ services:
       - DOCKER_INFLUXDB_INIT_PASSWORD=nadine2004
       - DOCKER_INFLUXDB_INIT_ORG=iot_org
       - DOCKER_INFLUXDB_INIT_BUCKET=iot_bucket
-      - DOCKER_INFLUX_INIT_ADMIN_TOKEN=mytoken1234
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=mytoken1234
     mqtt:
      image: eclipse-mosquitto:2
      container_name: mqtt-broker
