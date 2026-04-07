@@ -9,7 +9,7 @@ import json
 # 👉 import depuis ton Secure Element
 from se_module import generate_csr  
 
-BACKEND_URL = os.environ.get("BACKEND_URL", "https://127.0.0.1:5000")
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:5000")
 SECRET = os.environ["SECRET_KEY"].encode()
 DEVICE_ID = os.environ.get("DEVICE_ID", "iot-agent-01")
 
