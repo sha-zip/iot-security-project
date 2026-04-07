@@ -2,8 +2,8 @@ from influxdb_client import InfluxDBClient, Point, WritePrecision
 from datetime import datetime
 
 #config
-url = "http://localhost:8086"
-token = "mytoken123"
+url = "http://192.168.100.41:8086"
+token = "mytoken1234"
 org = "iot_org"
 bucket = "iot_bucket"
 

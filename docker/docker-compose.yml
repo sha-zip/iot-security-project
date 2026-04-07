@@ -9,12 +9,12 @@ services:
      volumes:
       - influxdb-data:/var/lib/influxdb2
      environment:
-      - DOCKER_INFLUXDB_INT_MODE=setup
-      - DOCKER_INFLUXDB_INIT_USERNAME=nadine
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=nad
       - DOCKER_INFLUXDB_INIT_PASSWORD=nadine2004
       - DOCKER_INFLUXDB_INIT_ORG=iot_org
-      - DOCKER_INFLUXDB_INIT_BUCKER=iot_bucket
-      - DOCKER_INFLUX_INIT_QDMIN_TOKEN=mytoken123
+      - DOCKER_INFLUXDB_INIT_BUCKET=iot_bucket
+      - DOCKER_INFLUX_INIT_ADMIN_TOKEN=mytoken1234
     mqtt:
      image: eclipse-mosquitto:2
      container_name: mqtt-broker
