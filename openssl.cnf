@@ -1,3 +1,4 @@
+HOME = .
 openssl_conf = openssl_init
 
 [openssl_init]
