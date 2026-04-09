@@ -1,6 +1,6 @@
 {
   "devices": {
-    "device001": {
+    "iot-agent-01": {
       "status": "active",
       "enrolled": false,
       "allowed_publish": ["sensor/data"],
