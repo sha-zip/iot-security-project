@@ -12,4 +12,5 @@ activate = 1
 
 [pkcs11_sect]
 module = /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
+pkcs11-module-path = /usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so
 activate = 1
