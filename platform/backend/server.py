@@ -186,12 +186,12 @@ def enroll():
         serial = "0x" + secrets.token_hex(16)
 
         # 10. Signature du certificat
-        cmd = [
+       cmd = [
     OPENSSL_BIN, "x509", "-req",
     "-engine", "pkcs11",
-    "-keyform", "engine",
+    "-CAkeyform", "engine",
     "-CA", CA_CERT,
-    "-CAkey", PKCS11_KEY,
+    "-CAkey", "pkcs11:object=ca-key;type=private",
     "-passin", "pass:0000",
     "-in", csr_path,
     "-out", crt_path,
