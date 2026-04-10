@@ -187,20 +187,18 @@ def enroll():
 
         # 10. Signature du certificat
         cmd = [
-            OPENSSL_BIN, "x509", "-req",
-            "-in", csr_path,
-            "-CA", CA_CERT,
-            "-CAkey", PKCS11_KEY,
-            "-set_serial", serial,
-            "-out", crt_path,
-            "-days", str(CERT_VALIDITY),
-            "-sha256",
-            "-extfile", ext_path,
-            "-extensions", "v3_client",
-            "-provider", "default",
-            "-provider", "pkcs11"
-        ]
-
+    OPENSSL_BIN, "x509", "-req",
+    "-engine", "pkcs11",
+    "-keyform", "engine",
+    "-CA", CA_CERT,
+    "-CAkey", PKCS11_KEY,
+    "-in", csr_path,
+    "-out", crt_path,
+    "-days", str(CERT_VALIDITY),
+    "-sha256",
+    "-extfile", ext_path,
+    "-extensions", "v3_client"
+]
         try:
             result = subprocess.run(
                 cmd,
