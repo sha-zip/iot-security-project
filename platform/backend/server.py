@@ -192,6 +192,7 @@ def enroll():
     "-keyform", "engine",
     "-CA", CA_CERT,
     "-CAkey", PKCS11_KEY,
+    "-passin", "pass:0000",
     "-in", csr_path,
     "-out", crt_path,
     "-days", str(CERT_VALIDITY),
