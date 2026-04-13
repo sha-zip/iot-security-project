@@ -28,8 +28,8 @@ log = logging.getLogger("se_module")
 # Constantes — peuvent être surchargées via variables d'environnement
 # ---------------------------------------------------------------------------
 PKCS11_LIB    = os.getenv("PKCS11_LIB",    "/usr/lib/softhsm/libsofthsm2.so")
-TOKEN_LABEL   = os.getenv("SE_TOKEN_LABEL", "iot-token")
-USER_PIN      = os.getenv("SE_USER_PIN",    "1234")          # PIN opérateur
+TOKEN_LABEL = os.getenv("SE_TOKEN_LABEL", "IoT_Secure_Element")
+USER_PIN      = os.getenv("SE_USER_PIN",    "0000")          # PIN opérateur
 KEY_LABEL     = os.getenv("SE_KEY_LABEL",   "iot-device-key")
 KEY_SIZE      = int(os.getenv("SE_KEY_SIZE", "2048"))
  
