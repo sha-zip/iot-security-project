@@ -8,7 +8,6 @@ import logging
 
 # Ajouter le répertoire alerting au path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "alerting"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "alerting"))
 
 from influxdb_exporter import InfluxDBExporter
 from risk_score_manager import RiskScoreManager

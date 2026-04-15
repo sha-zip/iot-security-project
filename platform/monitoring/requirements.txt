@@ -1,1 +1,1 @@
-influxdb-client[ciso]
+influxdb-client[ciso8601]
