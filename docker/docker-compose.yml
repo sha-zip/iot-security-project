@@ -66,7 +66,7 @@ services:
       dockerfile: docker/Dockerfile.monitoring
      container_name: monitoring
      environment:
-      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_URL=http://localhost:8086
       - INFLUXDB_TOKEN=mytoken1234
       - INFLUXDB_ORG=iot_org
       - INFLUXDB_BUCKET=iot_bucket
