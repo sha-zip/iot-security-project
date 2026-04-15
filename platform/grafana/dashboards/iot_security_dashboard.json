@@ -1,0 +1,312 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Tableau de bord de sécurité IoT - Risk Scores, Alertes et Événements",
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 1,
+  "id": null,
+  "iteration": 1700000000000,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Risk Score en Temps Réel",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 0 },
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "orange", "value": 60 },
+              { "color": "red", "value": 85 }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"iot_bucket\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"risk_score\")\n  |> filter(fn: (r) => r._field == \"score\")\n  |> last()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Distribution des Niveaux de Risque",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 0 },
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "CRITICAL" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "HIGH" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "MEDIUM" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "LOW" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"iot_bucket\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"risk_score\")\n  |> filter(fn: (r) => r._field == \"score\")\n  |> group(columns: [\"risk_level\"])\n  |> count()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Statistiques Alertes",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"iot_bucket\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"risk_score\")\n  |> filter(fn: (r) => r._field == \"score\")\n  |> filter(fn: (r) => r._value >= 70)\n  |> count()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Nombre de Devices Actifs",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"iot_bucket\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"risk_score\")\n  |> filter(fn: (r) => r._field == \"score\")\n  |> group(columns: [\"device_id\"])\n  |> count()\n  |> group()\n  |> count()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Risk Score - Historique",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 8 },
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "scheme",
+            "axisLabel": "Risk Score",
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "transparent", "value": null },
+              { "color": "red", "value": 70 }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"iot_bucket\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"risk_score\")\n  |> filter(fn: (r) => r._field == \"score\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Événements par Type",
+      "type": "barchart",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 18 },
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"iot_bucket\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"risk_score\")\n  |> filter(fn: (r) => r._field == \"score\")\n  |> group(columns: [\"event_type\"])\n  |> count()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Top Devices à Risque",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 18 },
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "_value" },
+            "properties": [
+              { "id": "displayName", "value": "Score Moyen" },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "yellow", "value": 30 },
+                    { "color": "orange", "value": 60 },
+                    { "color": "red", "value": 85 }
+                  ]
+                }
+              },
+              { "id": "custom.displayMode", "value": "color-background" }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"iot_bucket\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"risk_score\")\n  |> filter(fn: (r) => r._field == \"score\")\n  |> group(columns: [\"device_id\"])\n  |> mean()\n  |> sort(columns: [\"_value\"], desc: true)\n  |> limit(n: 20)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Tableau des Événements de Sécurité",
+      "type": "table",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 28 },
+      "datasource": "InfluxDB",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "score" },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "yellow", "value": 30 },
+                    { "color": "orange", "value": 60 },
+                    { "color": "red", "value": 85 }
+                  ]
+                }
+              },
+              { "id": "custom.displayMode", "value": "color-background" }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"iot_bucket\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"risk_score\")\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 50)",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": ["iot", "security", "risk"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": "InfluxDB",
+        "definition": "from(bucket: \"iot_bucket\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"risk_score\")\n  |> keep(columns: [\"device_id\"])\n  |> distinct(column: \"device_id\")",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "device_id",
+        "query": "from(bucket: \"iot_bucket\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"risk_score\")\n  |> keep(columns: [\"device_id\"])\n  |> distinct(column: \"device_id\")",
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "IoT Security Dashboard",
+  "uid": "iot-security-dashboard",
+  "version": 1
+}
