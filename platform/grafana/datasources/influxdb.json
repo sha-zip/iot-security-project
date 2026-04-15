@@ -1,0 +1,20 @@
+{
+  "apiVersion": 1,
+  "datasources": [
+    {
+      "name": "InfluxDB",
+      "type": "influxdb",
+      "access": "proxy",
+      "url": "http://influxdb:8086",
+      "jsonData": {
+        "version": "Flux",
+        "organization": "iot_org",
+        "defaultBucket": "iot_bucket"
+      },
+      "secureJsonData": {
+        "token": "mytoken1234"
+      },
+      "isDefault": true
+    }
+  ]
+}

@@ -8,6 +8,7 @@ services:
        - "8086:8086"
      volumes:
       - influxdb-data:/var/lib/influxdb2
+      - ./influxdb/init.sh:/docker-entrypoint-initdb.d/init.sh
      environment:
       - DOCKER_INFLUXDB_INIT_MODE=setup
       - DOCKER_INFLUXDB_INIT_USERNAME=nad
@@ -15,11 +16,22 @@ services:
       - DOCKER_INFLUXDB_INIT_ORG=iot_org
       - DOCKER_INFLUXDB_INIT_BUCKET=iot_bucket
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=mytoken1234
+
     grafana:
      image: grafana/grafana
      container_name: grafana
      ports:
       - "3000:3000"
+     volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ../platform/grafana/dashboards:/var/lib/grafana/dashboards
+     environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+     depends_on:
+      - influxdb
      restart: always
 
     mqtt:
@@ -39,6 +51,38 @@ services:
      container_name: platform-backend
      ports:
       - "5000:5000"
+     environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=mytoken1234
+      - INFLUXDB_ORG=iot_org
+      - INFLUXDB_BUCKET=iot_bucket
+     depends_on:
+      - influxdb
+     restart: unless-stopped
+
+    monitoring:
+     build:
+      context: ..
+      dockerfile: docker/Dockerfile.monitoring
+     container_name: monitoring
+     environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=mytoken1234
+      - INFLUXDB_ORG=iot_org
+      - INFLUXDB_BUCKET=iot_bucket
+      - EMAIL_ENABLED=${EMAIL_ENABLED:-false}
+      - EMAIL_SMTP_SERVER=${EMAIL_SMTP_SERVER:-smtp.gmail.com}
+      - EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-587}
+      - EMAIL_FROM=${EMAIL_FROM:-alerts@iot-security.local}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD:-}
+      - EMAIL_RECIPIENTS=${EMAIL_RECIPIENTS:-}
+      - TELEGRAM_ENABLED=${TELEGRAM_ENABLED:-false}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - ALERT_THRESHOLD=${ALERT_THRESHOLD:-70}
+      - CRITICAL_THRESHOLD=${CRITICAL_THRESHOLD:-85}
+     depends_on:
+      - influxdb
      restart: unless-stopped
 
     iot-agent:
@@ -53,3 +97,4 @@ services:
 
 volumes:
     influxdb-data:
+    grafana-data:

@@ -1,0 +1,19 @@
+# docker/Dockerfile.monitoring
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Installer les dependances
+COPY platform/monitoring/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# Copier le code monitoring
+COPY platform/monitoring/ /app/
+
+# Copier le module alerting
+COPY platform/alerting/ /app/alerting/
+
+# Ajouter alerting au PYTHONPATH
+ENV PYTHONPATH="/app/alerting:${PYTHONPATH}"
+
+CMD ["python", "simulate_logs.py"]
