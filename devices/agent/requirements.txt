@@ -1,0 +1,4 @@
+paho-mqtt==2.1.0
+cryptography>=42.0
+requests>=2.31
+python-pkcs11>=0.7.0
