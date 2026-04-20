@@ -1,1 +1,7 @@
-4
+
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage=digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:localhost,IP:127.0.0.1
+
