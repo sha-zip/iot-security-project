@@ -317,10 +317,6 @@ class IoTAgent:
         log.info("[ÉTAPE 6] Tentative de connexion TLS au broker MQTT.")
         self.state = AgentState.CONNECTING
 
-        # Exporter la clé publique + cert pour paho (paho ne supporte pas PKCS#11
-        # nativement ; on utilise une clé privée DER exportée temporairement
-        # depuis le SE pour l'établissement TLS).
-        # En production réelle, utiliser une implémentation TLS avec moteur PKCS#11.
         key_pem = self._get_tls_private_key_pem()
         if key_pem is None:
             return False
@@ -337,11 +333,12 @@ class IoTAgent:
             return False
 
         # Configurer le client MQTT
+        client_id = f"iot-{self.device_id}"
         self.mqtt_client = mqtt.Client(
-    client_id=client_id,
-    protocol=mqtt.MQTTv5,
-    callback_api_version=mqtt.CallbackAPIVersion.VERSION2,  # ← ajouter
-)
+            client_id=client_id,
+            protocol=mqtt.MQTTv5,
+            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+        )
 
         # Callbacks
         self.mqtt_client.on_connect    = self._on_mqtt_connect
@@ -368,7 +365,8 @@ class IoTAgent:
             self.mqtt_client.connect(
                 MQTT_BROKER,
                 MQTT_PORT,
-                keepalive=60
+                keepalive=60,
+                clean_start=True,
             )
         except ConnectionRefusedError as exc:
             log.error("[REFUS CONNEXION] Broker a refusé : %s", exc)
@@ -538,7 +536,6 @@ class IoTAgent:
                 "[SURVEILLANCE RENFORCÉE] Réduction de l'intervalle d'envoi."
             )
             self.state = AgentState.MONITORING
-            # Augmenter la fréquence d'envoi pour faciliter l'analyse IA
             global SEND_INTERVAL
             SEND_INTERVAL = max(1.0, SEND_INTERVAL / 2)
 
@@ -547,7 +544,7 @@ class IoTAgent:
             self.state = AgentState.BLOCKED
             self._running = False
 
-    def _on_mqtt_publish(self, client, userdata, mid):
+    def _on_mqtt_publish(self, client, userdata, mid, reason_code=None, properties=None):
         log.debug("Message publié (mid=%d).", mid)
 
     # ------------------------------------------------------------------
@@ -567,7 +564,6 @@ class IoTAgent:
         # Effacement sécurisé de la clé temporaire
         if self._key_path and os.path.exists(self._key_path):
             try:
-                # Écraser avant de supprimer
                 size = os.path.getsize(self._key_path)
                 with open(self._key_path, "wb") as f:
                     f.write(os.urandom(size))
@@ -593,6 +589,3 @@ if __name__ == "__main__":
     agent = IoTAgent()
     agent.run()
     log.info("Agent arrêté.")
-
-print("CSR générée :")
-
