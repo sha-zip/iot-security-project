@@ -142,7 +142,6 @@ class SecureElement:
             x509.NameAttribute(NameOID.COUNTRY_NAME,      "TN"),
         ])
 
-        # Builder sans signer pour récupérer le TBSCertificateRequest
         builder = (
             x509.CertificateSigningRequestBuilder()
             .subject_name(subject)
@@ -152,8 +151,6 @@ class SecureElement:
             )
         )
 
-        # La signature du CSR doit être produite par le token PKCS#11
-        # On signe le TBS via self.sign() puis on reconstruit le CSR complet.
         csr_pem = self._build_and_sign_csr(builder, pub_key, device_id)
         log.info("CSR généré avec succès (%d octets).", len(csr_pem))
         return csr_pem
@@ -288,13 +285,13 @@ class SecureElement:
                     Attribute.WRAP:    False,
                 },
                 private_template={
-                    Attribute.TOKEN:      True,
-                    Attribute.PRIVATE:    True,
-                    Attribute.SENSITIVE:  True,
+                    Attribute.TOKEN:       True,
+                    Attribute.PRIVATE:     True,
+                    Attribute.SENSITIVE:   True,
                     Attribute.EXTRACTABLE: False,   # La clé ne peut PAS être exportée
-                    Attribute.DECRYPT:   False,
-                    Attribute.SIGN:      True,
-                    Attribute.UNWRAP:    False,
+                    Attribute.DECRYPT:     False,
+                    Attribute.SIGN:        True,
+                    Attribute.UNWRAP:      False,
                 },
             )
         except pkcs11.exceptions.GeneralError as exc:
@@ -321,51 +318,41 @@ class SecureElement:
     ) -> bytes:
         """
         Contourne la limitation de cryptography (signature interne) :
-        - Sérialise le TBS (To-Be-Signed) du CSR
-        - Signe via PKCS#11 (clé dans le token)
-        - Reconstruit un CSR DER valide et le renvoie en PEM
-
-        Note : Pour simplifier la compatibilité, on utilise une approche
-        hybride — on génère un CSR avec une clé éphémère pour la structure,
-        puis on le re-signe via le token.
+        - Génère une clé éphémère pour signer le CSR (mode simulation)
+        - Sauvegarde la clé éphémère pour la réutiliser lors de la connexion TLS
+        - En production, utiliser openssl req avec le moteur PKCS#11
         """
         from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
         from cryptography.hazmat.primitives import serialization as _ser
 
-        # Générer une clé éphémère temporaire juste pour obtenir la structure DER
+        # Générer une clé éphémère temporaire pour signer le CSR
         ephemeral_key = _rsa.generate_private_key(
             public_exponent=65537,
             key_size=KEY_SIZE,
             backend=default_backend()
         )
-         # ✅ NOUVEAU : sauvegarder la clé éphémère pour la réutiliser en TLS
-    cert_store = os.getenv("CERT_STORE_DIR", "/tmp/device_certs")
-    os.makedirs(cert_store, exist_ok=True)
-    key_path = os.path.join(cert_store, f"{device_id}_private.pem")
-    with open(key_path, "wb") as f:
-        f.write(ephemeral_key.private_bytes(
-            encoding=_ser.Encoding.PEM,
-            format=_ser.PrivateFormat.TraditionalOpenSSL,
-            encryption_algorithm=_ser.NoEncryption()
-        ))
-    os.chmod(key_path, 0o600)
-    log.info("Clé éphémère sauvegardée → %s", key_path)
+
+        # ✅ Sauvegarder la clé éphémère pour la réutiliser en TLS
+        cert_store = os.getenv("CERT_STORE_DIR", "/tmp/device_certs")
+        os.makedirs(cert_store, exist_ok=True)
+        key_path = os.path.join(cert_store, f"{device_id}_private.pem")
+        with open(key_path, "wb") as f:
+            f.write(ephemeral_key.private_bytes(
+                encoding=_ser.Encoding.PEM,
+                format=_ser.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=_ser.NoEncryption()
+            ))
+        os.chmod(key_path, 0o600)
+        log.info("Clé éphémère sauvegardée → %s", key_path)
 
         # Construire un CSR signé avec la clé éphémère pour obtenir le TBS
         tmp_csr = builder.sign(ephemeral_key, hashes.SHA256(), default_backend())
         tbs_der = tmp_csr.tbs_certrequest_bytes
 
-        # Signer le TBS avec la vraie clé du token
-        signature = self.sign(tbs_der, "SHA256_RSA_PKCS")
+        # Signer le TBS avec la vraie clé du token (PKCS#11)
+        self.sign(tbs_der, "SHA256_RSA_PKCS")
 
-        # Maintenant on reconstruit le CSR DER : SEQUENCE { TBS, AlgoID, BIT STRING sig }
-        # On réutilise la structure du CSR temporaire mais on remplace la signature
-        # et on réencapsule correctement.
-        # Pour la compatibilité maximale avec OpenSSL, on utilise la clé publique réelle.
-        real_pub_pem = self.get_public_key_pem()
-        real_pub_key = serialization.load_pem_public_key(real_pub_pem, backend=default_backend())
-
-        # Reconstruire avec la vraie clé publique et la vraie signature
+        # Reconstruire le CSR final signé avec la clé éphémère
         final_csr = (
             x509.CertificateSigningRequestBuilder()
             .subject_name(tmp_csr.subject)
@@ -376,11 +363,6 @@ class SecureElement:
             .sign(ephemeral_key, hashes.SHA256(), default_backend())
         )
 
-        # On retourne le CSR signé avec la clé éphémère MAIS
-        # on associe à l'agent la clé publique réelle du token.
-        # En production, on utiliserait une lib PKCS#11 complète qui supporte
-        # CSR generation nativement (p11-kit, openssl pkcs11 engine).
-        # Ici on signe avec l'éphémère pour la démo et on loggue l'intent.
         log.warning(
             "Mode simulation : CSR signé avec clé éphémère. "
             "En production, utiliser `openssl req` avec le moteur PKCS#11."
