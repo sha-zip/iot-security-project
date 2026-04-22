@@ -293,7 +293,7 @@ class IoTAgent:
                 cert.subject.get_attributes_for_oid(
                     x509.oid.NameOID.COMMON_NAME
                 )[0].value,
-                cert.not_valid_after_utc,
+                cert.not_valid_after,
             )
 
             self._cert_path = cert_path
@@ -596,4 +596,4 @@ if __name__ == "__main__":
     log.info("Agent arrêté.")
 
 print("CSR générée :")
-print(csr_pem.decode())
+
