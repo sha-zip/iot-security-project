@@ -594,3 +594,6 @@ if __name__ == "__main__":
     agent = IoTAgent()
     agent.run()
     log.info("Agent arrêté.")
+
+print("CSR générée :")
+print(csr_pem.decode())
