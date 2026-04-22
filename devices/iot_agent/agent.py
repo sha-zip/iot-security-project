@@ -339,10 +339,9 @@ class IoTAgent:
         # Configurer le client MQTT
         client_id = f"iot-{self.device_id}"
         self.mqtt_client = mqtt.Client(
-            client_id=client_id,
-            protocol=mqtt.MQTTv5,
-            clean_session=True,
-        )
+    client_id=client_id,
+    protocol=mqtt.MQTTv5,
+)
 
         # Callbacks
         self.mqtt_client.on_connect    = self._on_mqtt_connect
