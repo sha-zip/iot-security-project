@@ -338,6 +338,18 @@ class SecureElement:
             key_size=KEY_SIZE,
             backend=default_backend()
         )
+         # ✅ NOUVEAU : sauvegarder la clé éphémère pour la réutiliser en TLS
+    cert_store = os.getenv("CERT_STORE_DIR", "/tmp/device_certs")
+    os.makedirs(cert_store, exist_ok=True)
+    key_path = os.path.join(cert_store, f"{device_id}_private.pem")
+    with open(key_path, "wb") as f:
+        f.write(ephemeral_key.private_bytes(
+            encoding=_ser.Encoding.PEM,
+            format=_ser.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=_ser.NoEncryption()
+        ))
+    os.chmod(key_path, 0o600)
+    log.info("Clé éphémère sauvegardée → %s", key_path)
 
         # Construire un CSR signé avec la clé éphémère pour obtenir le TBS
         tmp_csr = builder.sign(ephemeral_key, hashes.SHA256(), default_backend())
