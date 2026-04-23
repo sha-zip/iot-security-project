@@ -1,39 +1,31 @@
-#Python
+# Python
 __pycache__/
 *.py[cod]
-*.pyc
-platform/backend/venv
 
-#Virtualenv
+# Virtual environments
 venv/
 .venv/
 env/
+platform/backend/venv/
 
-#ENV/secrets 
+# Environment and secrets
 .env
 .env.*
 secrets/
 certs/
 
-#Crypto
+# Crypto / private material
 *.key
 *private*.pem
 *.p12
-*.pfx 
+*.pfx
+*.csr
+*.srl
 
-#OS/IDE
-.DS_Store
-.vscode/
-.idea/ 
+# Public key artifacts
+*.der
 
-# Python venv
-venv/
-.venv/
-
-# Public keys atifacts
-*.pem/n*.der/n
-
-#PKI - cles privees 
+# PKI files
 pki/*.key
 pki/*.csr
 pki/*.srl
@@ -44,8 +36,20 @@ pki/index.txt.old
 pki/serial
 pki/serial.old
 pki/*.old
-pki/*.pem
-pki/ca.crl 
+pki/ca.crl
 
-#Docker
+# Ignore PEMs in PKI by default
+pki/*.pem
+
+# Keep public cert examples if needed
+!pki/public/
+!pki/public/*.pem
+!pki/public/*.der
+
+# Docker / runtime
 *.pid
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
