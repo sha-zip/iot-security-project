@@ -54,6 +54,7 @@ pki/*.pem
 .vscode/
 .idea/
 # AI engine
+*.pkl
 !platform/
 !platform/ai_engine/
 !platform/ai_engine/*.py
