@@ -53,3 +53,7 @@ pki/*.pem
 .DS_Store
 .vscode/
 .idea/
+# AI engine
+!platform/
+!platform/ai_engine/
+!platform/ai_engine/*.py
