@@ -14,7 +14,7 @@ def simulate_logs():
       log = {
              "timestamp": row["timestamp"],
              "device_id": row["device_id"],
-             "auth_method": row["device_id"],
+             "auth_method": row["auth_method"],
              "secure_element_used": row["secure_element_used"] == "TRUE",
              "attack_type": row["attack_type"],
              "auth_result": row["auth_result"],

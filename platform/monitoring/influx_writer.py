@@ -23,3 +23,17 @@ def write_log(log):
    )
     write_api.write(bucket=bucket, org=org, record=point)
 
+def write_prediction(device_id, action, risk_score, explanation, data):
+    import json
+    point = (
+     Point("iot_predictions")
+     .tag("device_id", device_id)
+     .tag("action", action)
+     #riskscore converti en 0-100 pour faciliter dans grafana
+     .field("risk_score",          int(risk_score * 100))
+     .field("latency_ms",          float(data.get("latency_ms", 0.0)))
+     .field("failed_attempts_24h", int(data.get("failed_attempts_24h", 0)))
+     .field("explanation",         jsom.dumps(explanation))
+     .time(datetime.utcnow(), WritePrecision.NS)
+)
+    write_api.write(bucket=bucket, org=org, record=point)
