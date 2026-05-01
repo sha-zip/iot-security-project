@@ -28,4 +28,4 @@ extendedKeyUsage=clientAuth
 basicConstraints=CA:FALSE
 keyUsage=keyEncipherment,dataEncipherment
 extendedKeyUsage=serverAuth
-subjectALtName=DNS:mosquitto,DNS:localhost,IP:127.0.0.1
+subjectAltName=DNS:backend,DNS:mqtt,DNS:mosquitto,DNS:localhost,IP:127.0.0.1
