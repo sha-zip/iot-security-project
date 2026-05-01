@@ -1,2 +1,4 @@
 python-pkcs11
 requests
+paho-mqtt
+cryptography

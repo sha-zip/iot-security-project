@@ -30,6 +30,7 @@ services:
      volumes:
       - ../platform/mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf
       - ../pki:/mosquitto/certs:ro
+      - ../pki:/etc/mosquitto/certs:ro
      restart: unless-stopped
     
     backend:
@@ -42,6 +43,8 @@ services:
      restart: unless-stopped
 
     iot-agent:
+     volumes:
+      - /var/lib/softhsm/tokens:/var/lib/softhsm/tokens
      build:
       context: ..
       dockerfile: docker/Dockerfile.iot

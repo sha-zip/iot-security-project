@@ -42,7 +42,7 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 
 # Import local du module Secure Element
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "secure_element"))
+
 from se_module import SecureElement, SEError
 
 # ---------------------------------------------------------------------------
