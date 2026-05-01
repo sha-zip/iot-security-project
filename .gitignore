@@ -53,3 +53,5 @@ pki/*.pem
 .DS_Store
 .vscode/
 .idea/
+
+*.pkl
