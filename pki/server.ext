@@ -3,5 +3,5 @@ authorityKeyIdentifier=keyid,issuer
 basicConstraints=CA:FALSE
 keyUsage=digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
-subjectAltName=DNS:localhost,IP:127.0.0.1
+subjectAltName=DNS:backend,DNS:mqtt,DNS:mosquitto,DNS:localhost,IP:127.0.0.1
 
