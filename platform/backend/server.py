@@ -2,19 +2,20 @@
 server.py — Backend de la Plateforme IoT Sécurisée
 ====================================================
 Implémente côté serveur les étapes de l'organigramme :
-
+ 
   POST /api/v1/enroll   → Validation CSR → Signature certificat
   POST /api/v1/data     → Réception données → Pipeline IA
                           → Score risque → blocage / surveillance
-
-Conformément au cahier des charges :
-  - Authentification mutuelle (mTLS) Objet ↔ Plateforme
-  - PKI simplifiée (X.509, OpenSSL)
-  - Détection d'anomalies (IA)
-  - Score de risque → blocage ou surveillance renforcée
-
+                          → Écriture InfluxDB (risk score + XAI)
+ 
+INTÉGRATION IA + INFLUX :
+  - Le pipeline IA (feature_extractor → attack_model → risk_scoring → xai_explainer)
+    est appelé dans _analyze_behavior()
+  - Chaque prédiction est écrite dans InfluxDB via write_prediction()
+  - Le dashboard Grafana consomme la mesure `iot_predictions`
+ 
 Dépendances :
-    pip install flask cryptography paho-mqtt scikit-learn numpy
+    pip install flask cryptography paho-mqtt scikit-learn numpy influxdb-client
 """
 
 import os
@@ -44,16 +45,38 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from device_registry import DeviceRegistry, DeviceStatus
 from logger import AuditLogger
 
-# Import du moteur IA
-ai_path = str(Path(__file__).resolve().parent.parent / "ai_engine")
-sys.path.insert(0, ai_path)
+# ── Chemins ──────────────────────────────────────────────────────────────────
+ROOT_DIR  = Path(__file__).resolve().parent
+AI_DIR    = ROOT_DIR / "platform" / "ai_engine"
+# Ajoute les modules locaux
+sys.path.insert(0, str(ROOT_DIR))
+sys.path.insert(0, str(AI_DIR))
+
+# ── Registre & Audit ─────────────────────────────────────────────────────────
 try:
-    from anomaly_model  import AnomalyDetector
-    from risk_scoring   import RiskScorer
-    from feature_extractor import FeatureExtractor
-    AI_AVAILABLE = True
+    from device_registry import DeviceRegistry, DeviceStatus
+    from logger import AuditLogger
+    REGISTRY_AVAILABLE = True
 except ImportError:
+    REGISTRY_AVAILABLE = False
+  
+# ── Moteur IA ─────────────────────────────────────────────────────────────────
+try:
+    from feature_extractor import extract_features, FEATURE_NAMES
+    from attack_model      import AttackModel
+    from risk_scoring      import compute_risk
+    from xai_explainer     import explain
+    AI_AVAILABLE = True
+except ImportError as _ai_err:
     AI_AVAILABLE = False
+    _AI_IMPORT_ERROR = str(_ai_err)
+ 
+# ── InfluxDB ──────────────────────────────────────────────────────────────────
+try:
+    from influx_writer import write_prediction, write_log
+    INFLUX_AVAILABLE = True
+except ImportError:
+    INFLUX_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -81,21 +104,34 @@ MQTT_PORT       = int(os.getenv("MQTT_PORT", "8883"))
 RISK_THRESHOLD_BLOCK    = float(os.getenv("RISK_BLOCK",     "0.75"))
 RISK_THRESHOLD_MONITOR  = float(os.getenv("RISK_MONITOR",   "0.45"))
 API_KEY         = os.getenv("API_KEY",      "changeme-secret-key")  # Pour admin
+MODEL_PATH     = os.getenv("MODEL_PATH", str(ROOT_DIR / "attack_model.pkl"))
 
 Path(CERTS_DIR).mkdir(parents=True, exist_ok=True)
 
 app     = Flask(__name__)
 registry = DeviceRegistry(DB_PATH)
 audit    = AuditLogger(DB_PATH)
-
-if AI_AVAILABLE:
-    feature_extractor = FeatureExtractor()
-    anomaly_detector  = AnomalyDetector()
-    risk_scorer       = RiskScorer()
-    log.info("Moteur IA chargé avec succès.")
 else:
-    log.warning("Moteur IA non disponible — analyse désactivée.")
-
+    registry = audit = None
+    log.warning("DeviceRegistry / AuditLogger non disponibles.")
+# ── Chargement du modèle IA ───────────────────────────────────────────────────
+_attack_model: Optional["AttackModel"] = None
+ 
+if AI_AVAILABLE:
+    if Path(MODEL_PATH).exists():
+        try:
+            _attack_model = AttackModel()
+            _attack_model.load(MODEL_PATH)
+            log.info("Modèle IA chargé depuis %s", MODEL_PATH)
+        except Exception as exc:
+            log.warning("Impossible de charger le modèle : %s", exc)
+    else:
+        log.warning(
+            "Modèle introuvable (%s) — lancez main.py pour l'entraîner.", MODEL_PATH
+        )
+else:
+    log.warning("Moteur IA non disponible : %s", _AI_IMPORT_ERROR if not AI_AVAILABLE else "")
+ 
 
 # ---------------------------------------------------------------------------
 # Middleware d'authentification (routes admin)
@@ -219,14 +255,19 @@ def receive_data():
     })
     registry.update_last_seen(device_id)
 
-    # ── Analyse comportementale (IA) ──────────────────────────────────────
-    analysis = _analyze_behavior(device_id, data)
-    action   = analysis["action"]
-    risk     = analysis.get("risk_score", 0.0)
-
+   # ── Pipeline IA ───────────────────────────────────────────────────────────
+    analysis = _run_ai_pipeline(device_id, data)
+ 
+    action     = analysis["action"]
+    risk       = analysis["risk_score"]
+    level      = analysis["level"]
+    reasons    = analysis["reasons"]
+    confidence = analysis.get("confidence", 0.0)
+    predicted  = analysis.get("predicted_attack", 0)
+ 
     log.info(
-        "[IA] device=%s | normal=%s | score=%.3f | action=%s",
-        device_id, analysis.get("is_normal"), risk, action
+        "[IA] device=%s | predicted_attack=%s | score=%d | level=%s | action=%s",
+        device_id, predicted, risk, level, action,
     )
 
     if action == "block":
@@ -248,14 +289,30 @@ def receive_data():
             "device_id": device_id, "risk_score": risk
         })
         _notify_device(device_id, "enhanced_monitoring", risk, [])
-
+# ── Écriture InfluxDB ─────────────────────────────────────────────────────
+    if INFLUX_AVAILABLE:
+        try:
+            write_prediction(
+                device_id=device_id,
+                action=action,
+                risk_score=risk,
+                explanation=reasons,
+                data=data,
+                level=level,
+                confidence=confidence,
+            )
+            log.info("[INFLUX] Prédiction écrite pour %s", device_id)
+        except Exception as exc:
+            log.error("[INFLUX] Écriture échouée pour %s : %s", device_id, exc)
+ 
     return jsonify({
         "action":     action,
         "risk_score": risk,
+        "risk_level": level,
+        "reasons":    reasons,
+        "confidence": confidence,
         "timestamp":  time.time(),
     })
-
-
 # ---------------------------------------------------------------------------
 # ── Routes d'administration
 # ---------------------------------------------------------------------------
@@ -287,9 +344,14 @@ def revoke_device(device_id: str):
 
 @app.route("/api/v1/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "ai_available": AI_AVAILABLE})
-
-
+    return jsonify({
+        "status":           "ok",
+        "ai_available":     AI_AVAILABLE,
+        "model_loaded":     _attack_model is not None,
+        "influx_available": INFLUX_AVAILABLE,
+        "registry":         REGISTRY_AVAILABLE,
+    })
+ 
 # ---------------------------------------------------------------------------
 # Fonctions internes PKI
 # ---------------------------------------------------------------------------
@@ -436,123 +498,107 @@ def _revoke_certificate(device_id: str) -> Optional[str]:
 # Pipeline IA — Analyse comportementale
 # ---------------------------------------------------------------------------
 
-def _analyze_behavior(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+def _run_ai_pipeline(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Pipeline IA complet :
-      1. Extraction de features
-      2. Détection d'anomalies
-      3. Calcul du score de risque
-      4. Décision : normal | surveillance | blocage
-
-    Organigramme :
-      « Le comportement est-il normal ? »
-        Non → « Détection d'anomalies (IA) » → « Calcul score de risque »
-               → « Le risque est-il élevé ? »
+    Pipeline complet :
+      extract_features → attack_model.predict → compute_risk → xai_explainer.explain
+    Retourne un dict normalisé consommé par receive_data() et write_prediction().
     """
-    if not AI_AVAILABLE:
-        return _fallback_heuristic_analysis(device_id, data)
-
+    if not AI_AVAILABLE or _attack_model is None:
+        return _fallback_heuristic(device_id, data)
+ 
     try:
-        # Récupérer l'historique du device pour le contexte
-        history = audit.get_recent_events(device_id, limit=100)
-
-        # 1. Extraction de features
-        features = feature_extractor.extract(data, history)
-
-        # 2. Détection d'anomalies
-        is_anomaly, anomaly_score, reasons = anomaly_detector.predict(features)
-
-        if not is_anomaly:
-            # ── Organigramme : Comportement normal → Autorisation maintenue
-            return {"action": "allow", "is_normal": True, "risk_score": anomaly_score}
-
-        # 3. Calcul du score de risque
-        risk_score = risk_scorer.score(features, anomaly_score, history)
-
-        # 4. Décision basée sur le seuil
-        if risk_score >= RISK_THRESHOLD_BLOCK:
-            # ── Organigramme : Risque élevé → Blocage
-            return {
-                "action":    "block",
-                "is_normal": False,
-                "risk_score": risk_score,
-                "reasons":   reasons,
-            }
-        else:
-            # ── Organigramme : Risque modéré → Surveillance renforcée
-            return {
-                "action":    "enhanced_monitoring",
-                "is_normal": False,
-                "risk_score": risk_score,
-                "reasons":   reasons,
-            }
-
-    except Exception as exc:  # pylint: disable=broad-except
-        log.error("Erreur pipeline IA pour %s : %s", device_id, exc)
-        return _fallback_heuristic_analysis(device_id, data)
-
-
-def _fallback_heuristic_analysis(
-    device_id: str, data: Dict[str, Any]
-) -> Dict[str, Any]:
-    """
-    Analyse heuristique de secours quand le moteur IA n'est pas disponible.
-    Détecte des anomalies simples basées sur des règles.
-    """
-    risk_score = 0.0
-    reasons    = []
-
-    # Règle 1 : fréquence anormalement élevée (anti-DoS)
-    recent = audit.get_recent_events(device_id, limit=60, window_seconds=60)
-    if len(recent) > 50:
-        risk_score += 0.4
-        reasons.append("Trop de messages en 60s")
-
-    # Règle 2 : température hors plage normale
-    temp = data.get("temperature")
-    if temp is not None:
-        if not (-20 <= float(temp) <= 85):
-            risk_score += 0.3
-            reasons.append(f"Température anormale : {temp}°C")
-
-    # Règle 3 : timestamp aberrant
-    ts = data.get("timestamp", 0)
-    now = time.time()
-    if abs(now - float(ts)) > 300:
-        risk_score += 0.2
-        reasons.append("Timestamp trop éloigné de l'heure serveur")
-
-    is_normal = risk_score < 0.3
-
-    if risk_score >= RISK_THRESHOLD_BLOCK:
-        action = "block"
-    elif risk_score >= RISK_THRESHOLD_MONITOR:
-        action = "enhanced_monitoring"
-    else:
-        action = "allow"
-
+        # 1. Features (list → dict pour risk_scoring et xai)
+        features_list = extract_features(data)
+        feature_names = [
+            "failed_attempts_24h", "latency_ms", "auth_result",
+            "attack", "secure_element", "auth_method",
+        ]
+        row = dict(zip(feature_names, features_list))
+ 
+        # 2. Prédiction attaque + confiance
+        import numpy as np
+        X = np.array([features_list])
+        predictions = _attack_model.predict_with_confidence(X)
+        predicted_attack, confidence = predictions[0]
+ 
+        # 3. Risk score (0-100)
+        risk = compute_risk(row, predicted_attack)
+ 
+        # 4. XAI + niveau
+        level, reasons = explain(row, predicted_attack, confidence, risk)
+ 
+        # 5. Décision
+        action = _decide(risk)
+ 
+        return {
+            "action":           action,
+            "risk_score":       risk,
+            "level":            level,
+            "reasons":          reasons,
+            "confidence":       float(confidence),
+            "predicted_attack": int(predicted_attack),
+        }
+ 
+    except Exception as exc:
+        log.error("[IA] Erreur pipeline pour %s : %s", device_id, exc)
+        return _fallback_heuristic(device_id, data)
+ 
+ 
+def _decide(risk: int) -> str:
+    """Convertit un risk score (0-100) en action."""
+    if risk >= RISK_BLOCK:
+        return "block"
+    if risk >= RISK_MONITOR:
+        return "enhanced_monitoring"
+    return "allow"
+ 
+ 
+def _fallback_heuristic(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Analyse heuristique de secours quand le modèle n'est pas disponible."""
+    risk    = 0
+    reasons = []
+ 
+    if data.get("attack_type", "None") != "None":
+        risk += 30
+        reasons.append(f"Attack type détecté : {data.get('attack_type')}")
+ 
+    if str(data.get("auth_result", "")).lower() in ("failure", "0"):
+        risk += 10
+        reasons.append("Authentification échouée")
+ 
+    fails = int(data.get("failed_attempts_24h", 0))
+    if fails > 5:
+        risk += 10
+        reasons.append(f"{fails} tentatives échouées en 24h")
+ 
+    latency = float(data.get("latency_ms", 0))
+    if latency > 150:
+        risk += 5
+        reasons.append(f"Latence élevée : {latency} ms")
+ 
+    risk  = min(risk, 100)
+    level = ("HIGH RISK" if risk > 50 else "MEDIUM RISK" if risk > 20 else "LOW RISK")
+ 
     return {
-        "action":    action,
-        "is_normal": is_normal,
-        "risk_score": min(risk_score, 1.0),
-        "reasons":   reasons,
+        "action":           _decide(risk),
+        "risk_score":       risk,
+        "level":            level,
+        "reasons":          reasons,
+        "confidence":       0.0,
+        "predicted_attack": 1 if risk >= RISK_MONITOR else 0,
     }
-
+ 
+ 
 
 # ---------------------------------------------------------------------------
 # Notification MQTT vers le device
 # ---------------------------------------------------------------------------
 
-def _notify_device(
-    device_id: str,
-    action: str,
-    risk_score: float,
-    reasons: list
-) -> None:
-    """Envoie une commande au device via MQTT (QoS 1, retain=False)."""
+def _notify_device(device_id: str, action: str, risk_score: int, reasons: list) -> None:
     try:
         import paho.mqtt.publish as publish
-
+ 
         topic   = f"iot/{device_id}/cmd"
         payload = json.dumps({
             "action":     action,
@@ -560,27 +606,19 @@ def _notify_device(
             "reasons":    reasons,
             "timestamp":  time.time(),
         })
-
         tls_dict = {
-            "ca_certs":  CA_CERT_PATH,
-            "cert_reqs": ssl.CERT_REQUIRED,
+            "ca_certs":    CA_CERT_PATH,
+            "cert_reqs":   ssl.CERT_REQUIRED,
             "tls_version": ssl.PROTOCOL_TLS_CLIENT,
         }
-
-        publish.single(
-            topic,
-            payload=payload,
-            qos=1,
-            hostname=MQTT_BROKER,
-            port=MQTT_PORT,
-            tls=tls_dict,
-            transport="tcp",
-        )
-        log.info("[NOTIF→DEVICE] device=%s action=%s", device_id, action)
-
-    except Exception as exc:  # pylint: disable=broad-except
-        log.error("Impossible d'envoyer la commande à %s : %s", device_id, exc)
-
+        publish.single(topic, payload=payload, qos=1,
+                       hostname=MQTT_BROKER, port=MQTT_PORT,
+                       tls=tls_dict, transport="tcp")
+        log.info("[MQTT→] device=%s action=%s", device_id, action)
+ 
+    except Exception as exc:
+        log.error("[MQTT] Impossible d'envoyer à %s : %s", device_id, exc)
+ 
 
 # ---------------------------------------------------------------------------
 # Point d'entrée
