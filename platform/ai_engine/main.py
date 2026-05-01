@@ -23,7 +23,7 @@ from risk_scoring import compute_risk
 from xai_explainer import explain
 
 
-DEFAULT_CSV = "dataset_iot_secure_element.csv"
+DEFAULT_CSV = "logs.csv"
 
 
 def main(csv_path=None):
