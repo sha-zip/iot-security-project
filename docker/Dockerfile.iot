@@ -14,6 +14,6 @@ RUN pip install --no-cache-dir --timeout=120 -r /app/requirements.txt -r /app/se
 COPY devices/iot_agent/ /app/
 COPY devices/secure_element/se_module.py /app/se_module.py
 #Copier les certificaat PKI necessaires
-COPY pki/ /app/certs/
+COPY pki/ /app/pki/
 
 CMD [ "python", "agent.py"]

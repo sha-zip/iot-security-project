@@ -39,7 +39,7 @@ services:
       dockerfile: docker/Dockerfile.backend
      container_name: platform-backend
      ports:
-      - "5000:5000"
+      - "8443:8443"
      restart: unless-stopped
 
     iot-agent:
@@ -52,6 +52,10 @@ services:
      depends_on:
       - mqtt
       - backend
+     environment:
+      - PKI_URL=https://backend:8443
+      - MQTT_BROKER=mqtt
+      - CA_CERT=/app/pki/ca.crt
      restart: unless-stopped
 
 volumes:
