@@ -590,7 +590,8 @@ def _fallback_heuristic(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         "level":            level,
         "reasons":          reasons,
         "confidence":       0.0,
-        "predicted_attack": 1 if risk >= RISK_MONITOR else 0,
+        # CORRECT
+        "predicted_attack": 1 if risk >= RISK_THRESHOLD_MONITOR else 0,
     }
  
  
