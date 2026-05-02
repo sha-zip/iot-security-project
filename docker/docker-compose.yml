@@ -39,7 +39,18 @@ services:
       dockerfile: docker/Dockerfile.backend
      container_name: platform-backend
      ports:
+      - "5000:5000"
       - "8443:8443"
+     environment:
+      - MQTT_BROKER=mqtt
+      - MQTT_PORT=8883
+      - CA_CERT=/app/pki/ca.crt
+      - SERVER_CERT=/app/pki/server.crt
+      - SERVER_KEY=/app/pki/server.key
+      - MQTT_CLIENT_CERT=/app/pki/server.crt    # reuse server cert
+      - MQTT_CLIENT_KEY=/app/pki/server.key
+     depends_on:
+      - mqtt
      restart: unless-stopped
 
     iot-agent:
