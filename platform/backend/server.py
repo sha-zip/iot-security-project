@@ -101,6 +101,8 @@ CRL_PATH        = os.getenv("CRL_PATH",    "/app/pki/crl.pem")
 DB_PATH         = os.getenv("DB_PATH",     "/app/monitoring/logs.db")
 MQTT_BROKER     = os.getenv("MQTT_BROKER", "localhost")
 MQTT_PORT       = int(os.getenv("MQTT_PORT", "8883"))
+MQTT_CLIENT_CERT = os.getenv("MQTT_CLIENT_CERT", "/app/pki/server.crt")
+MQTT_CLIENT_KEY  = os.getenv("MQTT_CLIENT_KEY",  "/app/pki/server.key")
 RISK_THRESHOLD_BLOCK    = float(os.getenv("RISK_BLOCK",     "0.75"))
 RISK_THRESHOLD_MONITOR  = float(os.getenv("RISK_MONITOR",   "0.45"))
 API_KEY         = os.getenv("API_KEY",      "changeme-secret-key")  # Pour admin
@@ -687,6 +689,8 @@ def start_mqtt_subscriber():
     try:
         client.tls_set(
             ca_certs=CA_CERT_PATH,
+            certfile=MQTT_CLIENT_CERT,    # ← add
+            keyfile=MQTT_CLIENT_KEY,      # ← add
             cert_reqs=ssl.CERT_REQUIRED,
             tls_version=ssl.PROTOCOL_TLS_CLIENT,
         )
