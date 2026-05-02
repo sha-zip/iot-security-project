@@ -625,16 +625,76 @@ def _notify_device(device_id: str, action: str, risk_score: int, reasons: list) 
 #MQTT
 #-------------------------------
 def start_mqtt_subscriber():
-   #subscribe to mqtt to receive telemetry qnd forward to ai pipeline
+    """Subscribe to MQTT to receive telemetry and forward to AI pipeline."""
     import paho.mqtt.client as mqtt
+
     def on_connect(client, userdata, flags, rc, properties=None):
-     if rc == 0:
-      client.subscribe("iot/+/data", qos=1)
-      log.info("[MQTT SUB] Abonne au topic iot/+/data")
+        if rc == 0:
+            client.subscribe("iot/+/data", qos=1)
+            log.info("[MQTT SUB] Abonné au topic iot/+/data")
+
     def on_message(client, userdata, msg):
-     try:
-      data = json.loads(msg.payload.decode("utf-8"))
-      device_id = data.get("device_is", "")
+        try:
+            data = json.loads(msg.payload.decode("utf-8"))
+            device_id = data.get("device_id", "")
+            if not device_id:
+                return
+            if not registry:
+                return
+            device = registry.get_device(device_id)
+            if not device:
+                return
+            if device["status"] == DeviceStatus.BLOCKED:
+                return
+            registry.update_last_seen(device_id)
+            analysis = _run_ai_pipeline(device_id, data)
+            action = analysis["action"]
+            risk   = analysis["risk_score"]
+            level  = analysis["level"]
+            reasons = analysis["reasons"]
+            confidence = analysis.get("confidence", 0.0)
+            log.info("[MQTT DATA] device=%s score=%s action=%s",
+                     device_id, risk, action)
+            if INFLUX_AVAILABLE:
+                try:
+                    write_prediction(
+                        device_id=device_id,
+                        action=action,
+                        risk_score=risk,
+                        explanation=reasons,
+                        data=data,
+                        level=level,
+                        confidence=confidence,
+                    )
+                except Exception as exc:
+                    log.error("[INFLUX] %s", exc)
+            if action == "block":
+                registry.update_device_status(device_id, DeviceStatus.BLOCKED)
+                _notify_device(device_id, "block", risk, reasons)
+            elif action == "enhanced_monitoring":
+                registry.update_device_status(device_id, DeviceStatus.MONITORED)
+                _notify_device(device_id, "enhanced_monitoring", risk, [])
+        except Exception as exc:
+            log.error("[MQTT MSG] Erreur: %s", exc)
+
+    client = mqtt.Client(
+        protocol=mqtt.MQTTv5,
+        callback_api_version=mqtt.CallbackAPIVersion.VERSION2
+    )
+    client.on_connect = on_connect
+    client.on_message = on_message
+    try:
+        client.tls_set(
+            ca_certs=CA_CERT_PATH,
+            cert_reqs=ssl.CERT_REQUIRED,
+            tls_version=ssl.PROTOCOL_TLS_CLIENT,
+        )
+        client.tls_insecure_set(False)
+        client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
+        client.loop_start()
+        log.info("[MQTT SUB] Connecté au broker %s:%d", MQTT_BROKER, MQTT_PORT)
+    except Exception as exc:
+        log.error("[MQTT SUB] Connexion échouée: %s", exc)
 
 
 # ---------------------------------------------------------------------------
