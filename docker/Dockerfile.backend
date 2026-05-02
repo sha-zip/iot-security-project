@@ -11,9 +11,10 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 # Copier le code backend (inclut iot_pubkey2.pem)
 COPY platform/backend/ /app/
 COPY platform/monitoring/influx_writer.py /app/influx_writer.py
+COPY platform/ai_engine/ /app/
 #copier les certificat
 COPY pki/ /app/pki
 
-EXPOSE 8443
+EXPOSE 5000 8443
 
 CMD ["python", "server.py"]
