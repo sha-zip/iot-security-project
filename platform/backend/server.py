@@ -115,6 +115,7 @@ if REGISTRY_AVAILABLE:
 else:
     registry = audit = None
     log.warning("DeviceRegistry / AuditLogger non disponibles.")
+ 
 # ── Chargement du modèle IA ───────────────────────────────────────────────────
 _attack_model: Optional["AttackModel"] = None
  
@@ -695,6 +696,8 @@ def start_mqtt_subscriber():
         log.info("[MQTT SUB] Connecté au broker %s:%d", MQTT_BROKER, MQTT_PORT)
     except Exception as exc:
         log.error("[MQTT SUB] Connexion échouée: %s", exc)
+
+threading.Thread(target=start_mqtt_subscriber, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
