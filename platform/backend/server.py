@@ -109,8 +109,9 @@ MODEL_PATH     = os.getenv("MODEL_PATH", str(ROOT_DIR / "attack_model.pkl"))
 Path(CERTS_DIR).mkdir(parents=True, exist_ok=True)
 
 app     = Flask(__name__)
-registry = DeviceRegistry(DB_PATH)
-audit    = AuditLogger(DB_PATH)
+if REGISTRY_AVAILABLE:
+    registry = DeviceRegistry(DB_PATH)
+    audit    = AuditLogger(DB_PATH)
 else:
     registry = audit = None
     log.warning("DeviceRegistry / AuditLogger non disponibles.")
@@ -547,9 +548,9 @@ def _run_ai_pipeline(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
  
 def _decide(risk: int) -> str:
     """Convertit un risk score (0-100) en action."""
-    if risk >= RISK_BLOCK:
+    if risk >= RISK_THRESHOLD_BLOCK:
         return "block"
-    if risk >= RISK_MONITOR:
+    if risk >= RISK_THRESHOLD_MONITOR:
         return "enhanced_monitoring"
     return "allow"
  
@@ -619,6 +620,22 @@ def _notify_device(device_id: str, action: str, risk_score: int, reasons: list) 
     except Exception as exc:
         log.error("[MQTT] Impossible d'envoyer à %s : %s", device_id, exc)
  
+
+#----------------------------
+#MQTT
+#-------------------------------
+def start_mqtt_subscriber():
+   #subscribe to mqtt to receive telemetry qnd forward to ai pipeline
+    import paho.mqtt.client as mqtt
+    def on_connect(client, userdata, flags, rc, properties=None):
+     if rc == 0:
+      client.subscribe("iot/+/data", qos=1)
+      log.info("[MQTT SUB] Abonne au topic iot/+/data")
+    def on_message(client, userdata, msg):
+     try:
+      data = json.loads(msg.payload.decode("utf-8"))
+      device_id = data.get("device_is", "")
+
 
 # ---------------------------------------------------------------------------
 # Point d'entrée

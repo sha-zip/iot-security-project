@@ -1,2 +1,7 @@
 Flask
 cryptography
+paho-mqtt
+requests
+influxdb-client
+scikit-learn
+numpy
