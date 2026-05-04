@@ -638,36 +638,90 @@ def _apply_decision(device_id: str, analysis: Dict[str, Any]) -> None:
     predicted = analysis.get("predicted_attack", "None")
 
     log.info(
-     "[]"
+     "[IA] device=%s | attaque=%s (%.1f%%) | score=%d | level=%s | action=%s",
+        device_id, predicted, confidence, risk, level, action,
+    )
+    if action == "block":
+        log.critical("[BLOCAGE] %s (score=%d)", device_id, risk)
+        registry.update_device_status(device_id, DeviceStatus.BLOCKED)
+        audit.log_event("device_blocked", {
+            "device_id": device_id, "risk_score": risk, "reasons": reasons
+        })
+ 
+    elif action == "enhanced_monitoring":
+        log.warning("[MONITORING+] %s (score=%d)", device_id, risk)
+        registry.update_device_status(device_id, DeviceStatus.MONITORED)
+        audit.log_event("enhanced_monitoring", {"device_id": device_id, "risk_score": risk})
+ 
+    # Toujours notifier le device, quelle que soit l'action
+    _notify_device(device_id, action, risk, reasons, predicted, level, confidence)
+ 
+    if INFLUX_AVAILABLE:
+        try:
+            write_prediction(
+                device_id=device_id,
+                action=action,
+                risk_score=risk,
+                explanation=reasons,
+                data={},
+                level=level,
+                confidence=confidence,
+            )
+        except Exception as exc:
+            log.error("[INFLUX] Écriture échouée pour %s : %s", device_id, exc)
+ 
 # ---------------------------------------------------------------------------
 # Notification MQTT vers le device
 # ---------------------------------------------------------------------------
 
-def _notify_device(device_id: str, action: str, risk_score: int, reasons: list) -> None:
+def _notify_device(
+    device_id: str,
+    action: str,
+    risk_score: int,
+    reasons: list,
+    attack_type: str = "None",
+    risk_level: str  = "LOW RISK",
+    confidence: float = 0.0,
+) -> None:
+    """
+    Publie le résultat complet de l'analyse IA sur iot/{device_id}/cmd.
+ 
+    L'ancien _notify_device n'envoyait que action + risk_score + reasons.
+    Le champ attack_type, risk_level et confidence manquaient, donc l'agent
+    ne pouvait pas afficher le score de risque ni l'explication XAI.
+    """
     try:
         import paho.mqtt.publish as publish
  
-        topic   = f"iot/{device_id}/cmd"
+        topic = f"iot/{device_id}/cmd"
         payload = json.dumps({
-            "action":     action,
-            "risk_score": risk_score,
-            "reasons":    reasons,
-            "timestamp":  time.time(),
+            "action":      action,
+            "attack_type": attack_type,
+            "risk_score":  risk_score,
+            "risk_level":  risk_level,
+            "confidence":  confidence,
+            "explanation": reasons,      # XAI — liste de raisons lisibles
+            "reason":      reasons[0] if reasons else "Analyse IA",
+            "timestamp":   time.time(),
         })
+ 
         tls_dict = {
             "ca_certs":    CA_CERT_PATH,
+            "certfile":    MQTT_CLIENT_CERT,
+            "keyfile":     MQTT_CLIENT_KEY,
             "cert_reqs":   ssl.CERT_REQUIRED,
             "tls_version": ssl.PROTOCOL_TLS_CLIENT,
         }
-        publish.single(topic, payload=payload, qos=1,
-                       hostname=MQTT_BROKER, port=MQTT_PORT,
-                       tls=tls_dict, transport="tcp")
-        log.info("[MQTT→] device=%s action=%s", device_id, action)
+        publish.single(
+            topic, payload=payload, qos=1,
+            hostname=MQTT_BROKER, port=MQTT_PORT,
+            tls=tls_dict, transport="tcp",
+        )
+        log.info("[MQTT→] device=%s action=%s attack=%s score=%d",
+                 device_id, action, attack_type, risk_score)
  
     except Exception as exc:
         log.error("[MQTT] Impossible d'envoyer à %s : %s", device_id, exc)
- 
-
 #----------------------------
 #MQTT
 #-------------------------------
@@ -694,47 +748,29 @@ def start_mqtt_subscriber():
             if device["status"] == DeviceStatus.BLOCKED:
                 return
             registry.update_last_seen(device_id)
+            audit.log_event("data_received", {
+                "device_id": device_id,
+                "timestamp": data.get("timestamp"),
+            })
+ 
             analysis = _run_ai_pipeline(device_id, data)
-            action = analysis["action"]
-            risk   = analysis["risk_score"]
-            level  = analysis["level"]
-            reasons = analysis["reasons"]
-            confidence = analysis.get("confidence", 0.0)
-            log.info("[MQTT DATA] device=%s score=%s action=%s",
-                     device_id, risk, action)
-            if INFLUX_AVAILABLE:
-                try:
-                    write_prediction(
-                        device_id=device_id,
-                        action=action,
-                        risk_score=risk,
-                        explanation=reasons,
-                        data=data,
-                        level=level,
-                        confidence=confidence,
-                    )
-                except Exception as exc:
-                    log.error("[INFLUX] %s", exc)
-            if action == "block":
-                registry.update_device_status(device_id, DeviceStatus.BLOCKED)
-                _notify_device(device_id, "block", risk, reasons)
-            elif action == "enhanced_monitoring":
-                registry.update_device_status(device_id, DeviceStatus.MONITORED)
-                _notify_device(device_id, "enhanced_monitoring", risk, [])
+            _apply_decision(device_id, analysis)
+ 
         except Exception as exc:
             log.error("[MQTT MSG] Erreur: %s", exc)
-
+ 
     client = mqtt.Client(
         protocol=mqtt.MQTTv5,
         callback_api_version=mqtt.CallbackAPIVersion.VERSION2
     )
     client.on_connect = on_connect
     client.on_message = on_message
+ 
     try:
         client.tls_set(
             ca_certs=CA_CERT_PATH,
-            certfile=MQTT_CLIENT_CERT,    # ← add
-            keyfile=MQTT_CLIENT_KEY,      # ← add
+            certfile=MQTT_CLIENT_CERT,
+            keyfile=MQTT_CLIENT_KEY,
             cert_reqs=ssl.CERT_REQUIRED,
             tls_version=ssl.PROTOCOL_TLS_CLIENT,
         )
@@ -744,9 +780,9 @@ def start_mqtt_subscriber():
         log.info("[MQTT SUB] Connecté au broker %s:%d", MQTT_BROKER, MQTT_PORT)
     except Exception as exc:
         log.error("[MQTT SUB] Connexion échouée: %s", exc)
-
+ 
+ 
 threading.Thread(target=start_mqtt_subscriber, daemon=True).start()
-
 
 # ---------------------------------------------------------------------------
 # Point d'entrée
