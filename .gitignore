@@ -56,3 +56,4 @@ pki/*.pem
 
 *.pkl
 *.pkl
+/platform/ai_engine/attack_model.pkl

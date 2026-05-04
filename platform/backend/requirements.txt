@@ -5,3 +5,5 @@ requests
 influxdb-client
 scikit-learn
 numpy
+pandas
+joblib

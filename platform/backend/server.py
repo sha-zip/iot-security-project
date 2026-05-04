@@ -108,6 +108,9 @@ RISK_THRESHOLD_MONITOR  = float(os.getenv("RISK_MONITOR",   "0.45"))
 API_KEY         = os.getenv("API_KEY",      "changeme-secret-key")  # Pour admin
 MODEL_PATH     = os.getenv("MODEL_PATH", str(ROOT_DIR / "attack_model.pkl"))
 
+RISK_THRESHOLD_BLOCK = int(os.getenv("RISK_BLOCK", "70"))
+RISK_THRESHOLD_MONITOR = int(os.getenv("RISK_MONITOR", "30"))
+
 Path(CERTS_DIR).mkdir(parents=True, exist_ok=True)
 
 app     = Flask(__name__)
@@ -497,7 +500,22 @@ def _revoke_certificate(device_id: str) -> Optional[str]:
         return result.stderr.strip()
     return None
 
+#--------------------------------------------------------------------------
+# EXTRACTION des features depuis le payload structure de l'agent
+#--------------------------------------------------------------------------
+def _extract_auth_row(data: Dict[str, Any]) -> Dict[str, Any]:
 
+    auth = data.get("auth", {})
+    if not auth:
+     return data
+    return {
+     "failed_attempts_24h": auth.get("failed_attempts_24h", 0),
+     "latency_ms":          auth.get("tls_latency_ms", 0.0),
+     "auth_result":         auth.get("auth_result", "Failure"),
+     "secure_element_used": str(auth.get("secure_element_used", False)),
+     "auth_method":         auth.get("auth_method", "mtls_Software"),
+     "attack_type":         "None",
+    }
 # ---------------------------------------------------------------------------
 # Pipeline IA — Analyse comportementale
 # ---------------------------------------------------------------------------
@@ -509,44 +527,53 @@ def _run_ai_pipeline(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     Retourne un dict normalisé consommé par receive_data() et write_prediction().
     """
     if not AI_AVAILABLE or _attack_model is None:
-        return _fallback_heuristic(device_id, data)
+     return _fallback_heuristic(device_id, data)
  
     try:
-        # 1. Features (list → dict pour risk_scoring et xai)
-        features_list = extract_features(data)
-        feature_names = [
-            "failed_attempts_24h", "latency_ms", "auth_result",
-            "attack", "secure_element", "auth_method",
-        ]
-        row = dict(zip(feature_names, features_list))
+     auth_row = _extract_auth_row(data)
+
+     features_list = extract_features(auth_row)
+     row = dict(zip(FEATURE_NAMES, features_list))
+
+     import numpy as np
+     import pandas as pd
+     # 1. Features (list → dict pour risk_scoring et xai)
+     features_list = extract_features(data)
+     feature_names = [
+      "failed_attempts_24h",
+      "latency_ms",
+      "auth_result",
+      "secure_element",
+      "auth_method",
+     ]
+     row = dict(zip(feature_names, features_list))
  
         # 2. Prédiction attaque + confiance
-        import numpy as np
-        X = np.array([features_list])
-        predictions = _attack_model.predict_with_confidence(X)
-        predicted_attack, confidence = predictions[0]
+     X = pd.DataFrame([features_list], columns=feature_names)
+     predictions = _attack_model.predict_with_confidence(X)
+     predicted_attack, confidence = predictions[0]
  
         # 3. Risk score (0-100)
-        risk = compute_risk(row, predicted_attack)
+     risk = compute_risk(row, predicted_attack)
  
         # 4. XAI + niveau
-        level, reasons = explain(row, predicted_attack, confidence, risk)
+     level, reasons = explain(row, predicted_attack, confidence, risk)
  
         # 5. Décision
-        action = _decide(risk)
- 
-        return {
-            "action":           action,
-            "risk_score":       risk,
-            "level":            level,
-            "reasons":          reasons,
-            "confidence":       float(confidence),
-            "predicted_attack": int(predicted_attack),
-        }
+     action = _decide(risk)
+
+     return {
+      "action":           action,
+      "risk_score":       risk,
+      "level":            level,
+      "reasons":          reasons,
+      "confidence":       float(confidence),
+      "predicted_attack": str(predicted_attack),
+     }
  
     except Exception as exc:
-        log.error("[IA] Erreur pipeline pour %s : %s", device_id, exc)
-        return _fallback_heuristic(device_id, data)
+     log.error("[IA] Erreur pipeline pour %s : %s", device_id, exc)
+     return _fallback_heuristic(device_id, data)
  
  
 def _decide(risk: int) -> str:
@@ -560,26 +587,29 @@ def _decide(risk: int) -> str:
  
 def _fallback_heuristic(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """Analyse heuristique de secours quand le modèle n'est pas disponible."""
+    auth    = data.get("auth", data)
     risk    = 0
     reasons = []
- 
-    if data.get("attack_type", "None") != "None":
-        risk += 30
-        reasons.append(f"Attack type détecté : {data.get('attack_type')}")
- 
-    if str(data.get("auth_result", "")).lower() in ("failure", "0"):
+
+    auth_result = str(auth.get("auth_result", "")).lower()
+    if auth_result in ("failure", "0"):
         risk += 10
         reasons.append("Authentification échouée")
  
-    fails = int(data.get("failed_attempts_24h", 0))
+    fails = int(auth.get("failed_attempts_24h", 0))
     if fails > 5:
         risk += 10
         reasons.append(f"{fails} tentatives échouées en 24h")
  
-    latency = float(data.get("latency_ms", 0))
+    latency = float(auth.get("tls_latency_ms", auth.get("latency_ms", 0)))
     if latency > 150:
         risk += 5
-        reasons.append(f"Latence élevée : {latency} ms")
+        reasons.append(f"Latence TLS élevée : {latency:.0f} ms")
+
+    se_used = auth.get("secure_elment_used", True)
+    if str(se_used).lower() in ("false", "0"):
+     risk += 10
+     reasons.append("Secure Element non utilise - cle prive en logical")
  
     risk  = min(risk, 100)
     level = ("HIGH RISK" if risk > 50 else "MEDIUM RISK" if risk > 20 else "LOW RISK")
@@ -591,11 +621,24 @@ def _fallback_heuristic(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         "reasons":          reasons,
         "confidence":       0.0,
         # CORRECT
-        "predicted_attack": 1 if risk >= RISK_THRESHOLD_MONITOR else 0,
+        "predicted_attack": "UNKNOWN",
     }
  
  
+#--------------------------------------------------------------------
+#Aplliquer lq decision IA : registre + notification MQTT
+#--------------------------------------------------------------------
+def _apply_decision(device_id: str, analysis: Dict[str, Any]) -> None:
 
+    action   = analysis["action"]
+    risk     = analysis["risk_score"]
+    level    = analysis["level"]
+    reasons  = analysis["reasons"]
+    confidence = analysis.get("confidence", 0.0)
+    predicted = analysis.get("predicted_attack", "None")
+
+    log.info(
+     "[]"
 # ---------------------------------------------------------------------------
 # Notification MQTT vers le device
 # ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY platform/backend/ /app/
 COPY platform/monitoring/influx_writer.py /app/influx_writer.py
 COPY platform/ai_engine/ /app/
+COPY platform/ai_engine/attack_model.pkl /app/attack_model.pkl
 #copier les certificat
 COPY pki/ /app/pki
 
