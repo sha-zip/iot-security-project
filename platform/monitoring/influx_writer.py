@@ -18,12 +18,13 @@ def write_log(log):
      .tag("auth_method", log["auth_method"])
      .field("latency_ms", log["latency_ms"])
      .field("failed_attempts_24h", log["failed_attempts_24h"])
-     .field("risk_score", log["risk_score"])
+     .field("risk_score", int(log["risk_score"]))
      .time(datetime.utcnow(), WritePrecision.NS)
    )
     write_api.write(bucket=bucket, org=org, record=point)
 
 def write_prediction(device_id, action, risk_score, explanation, data, level="LOW RISK", confidence=0.0):
+    auth = data.get("auth", data)
     import json
     point = (
      Point("iot_predictions")
@@ -31,10 +32,10 @@ def write_prediction(device_id, action, risk_score, explanation, data, level="LO
      .tag("action", action)
      .tag("level",  level)
      #riskscore converti en 0-100 pour faciliter dans grafana
-     .field("risk_score",          int(risk_score * 100))
+     .field("risk_score",          int(risk_score))
      .field("confidence",          float(confidence))
-     .field("latency_ms",          float(data.get("latency_ms", 0.0)))
-     .field("failed_attempts_24h", int(data.get("failed_attempts_24h", 0)))
+     .field("latency_ms",          float(auth.get("tls_latency_ms", auth.get("latency_ms", 0.0))))
+     .field("failed_attempts_24h", int(auth.get("failed_attempts_24h", 0)))
      .field("explanation",         json.dumps(explanation))
      .time(datetime.utcnow(), WritePrecision.NS)
 )
