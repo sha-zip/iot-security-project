@@ -130,30 +130,13 @@ class SecureElement:
         """
         self._assert_initialized()
         log.info("Génération du CSR pour le device : %s", device_id)
-
-        # Exporter la clé publique depuis le token
-        pub_key_der = self._export_public_key_der()
-        pub_key = serialization.load_der_public_key(pub_key_der, backend=default_backend())
-
-        # Construire le CSR (Subject) en mémoire
-        subject = x509.Name([
-            x509.NameAttribute(NameOID.COMMON_NAME,       device_id),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, organization),
-            x509.NameAttribute(NameOID.COUNTRY_NAME,      "TN"),
-        ])
-
-        builder = (
-            x509.CertificateSigningRequestBuilder()
-            .subject_name(subject)
-            .add_extension(
-                x509.BasicConstraints(ca=False, path_length=None),
-                critical=True
-            )
-        )
-
-        csr_pem = self._build_and_sign_csr(builder, pub_key, device_id)
-        log.info("CSR généré avec succès (%d octets).", len(csr_pem))
+           
+      # ✅ Appel direct à generate_csr_openssl — vrai moteur PKCS#11
+        csr_pem = generate_csr_openssl(device_id, KEY_LABEL)
+        log.info("CSR généré avec succès via PKCS#11 (%d octets).", len(csr_pem))
         return csr_pem
+
+      
 
     def sign(self, data: bytes, mechanism: str = "SHA256_RSA_PKCS") -> bytes:
         """
@@ -310,65 +293,7 @@ class SecureElement:
         except Exception as exc:  # pylint: disable=broad-except
             raise SEError(f"Export clé publique DER échoué : {exc}") from exc
 
-    def _build_and_sign_csr(
-        self,
-        builder: x509.CertificateSigningRequestBuilder,
-        pub_key,
-        device_id: str
-    ) -> bytes:
-        """
-        Contourne la limitation de cryptography (signature interne) :
-        - Génère une clé éphémère pour signer le CSR (mode simulation)
-        - Sauvegarde la clé éphémère pour la réutiliser lors de la connexion TLS
-        - En production, utiliser openssl req avec le moteur PKCS#11
-        """
-        from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
-        from cryptography.hazmat.primitives import serialization as _ser
-
-        # Générer une clé éphémère temporaire pour signer le CSR
-        ephemeral_key = _rsa.generate_private_key(
-            public_exponent=65537,
-            key_size=KEY_SIZE,
-            backend=default_backend()
-        )
-
-        # ✅ Sauvegarder la clé éphémère pour la réutiliser en TLS
-        cert_store = os.getenv("CERT_STORE_DIR", "/tmp/device_certs")
-        os.makedirs(cert_store, exist_ok=True)
-        key_path = os.path.join(cert_store, f"{device_id}_private.pem")
-        with open(key_path, "wb") as f:
-            f.write(ephemeral_key.private_bytes(
-                encoding=_ser.Encoding.PEM,
-                format=_ser.PrivateFormat.TraditionalOpenSSL,
-                encryption_algorithm=_ser.NoEncryption()
-            ))
-        os.chmod(key_path, 0o600)
-        log.info("Clé éphémère sauvegardée → %s", key_path)
-
-        # Construire un CSR signé avec la clé éphémère pour obtenir le TBS
-        tmp_csr = builder.sign(ephemeral_key, hashes.SHA256(), default_backend())
-        tbs_der = tmp_csr.tbs_certrequest_bytes
-
-        # Signer le TBS avec la vraie clé du token (PKCS#11)
-        self.sign(tbs_der, "SHA256_RSA_PKCS")
-
-        # Reconstruire le CSR final signé avec la clé éphémère
-        final_csr = (
-            x509.CertificateSigningRequestBuilder()
-            .subject_name(tmp_csr.subject)
-            .add_extension(
-                x509.BasicConstraints(ca=False, path_length=None),
-                critical=True
-            )
-            .sign(ephemeral_key, hashes.SHA256(), default_backend())
-        )
-
-        log.warning(
-            "Mode simulation : CSR signé avec clé éphémère. "
-            "En production, utiliser `openssl req` avec le moteur PKCS#11."
-        )
-        return final_csr.public_bytes(serialization.Encoding.PEM)
-
+    
     # ------------------------------------------------------------------
     # Context manager
     # ------------------------------------------------------------------
