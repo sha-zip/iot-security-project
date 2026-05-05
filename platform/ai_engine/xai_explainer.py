@@ -45,7 +45,7 @@ def explain(row, predicted_attack, confidence, risk):
         if latency > 150:
             explanation.append(
                 f"Abnormally high handshake latency ({latency:.0f} ms) "
-                "— possible interception"
+                "| possible interception"
             )
     except (ValueError, TypeError):
         pass
@@ -54,7 +54,7 @@ def explain(row, predicted_attack, confidence, risk):
     try:
         if int(row.get("secure_element", 1)) == 0:
             explanation.append(
-                "Secure Element not used — private key stored in software, "
+                "Secure Element not used | private key stored in software, "
                 "vulnerable to cloning"
             )
     except (ValueError, TypeError):
@@ -62,7 +62,7 @@ def explain(row, predicted_attack, confidence, risk):
 
     # --- clean event ---
     if not explanation:
-        explanation.append("No anomaly detected — normal authentication event")
+        explanation.append("No anomaly detected | normal authentication event")
 
     # --- risk level ---
     if risk >= 70:
