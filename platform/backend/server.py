@@ -265,52 +265,19 @@ def receive_data():
    # ── Pipeline IA ───────────────────────────────────────────────────────────
     analysis = _run_ai_pipeline(device_id, data)
  
-    action     = analysis["action"]
-    risk       = analysis["risk_score"]
-    level      = analysis["level"]
-    reasons    = analysis["reasons"]
-    confidence = analysis.get("confidence", 0.0)
-    predicted  = analysis.get("predicted_attack", 0)
- 
+   
     log.info(
-        "[IA] device=%s | predicted_attack=%s | score=%d | level=%s | action=%s",
-        device_id, predicted, risk, level, action,
-    )
+     "[IA] device=%s | predicted_attack=%s | score=%d | level=%s | action=%s",
+     device_id,
+     analysis.get("predicted_attack", 0),
+     analysis["risk_score"],
+     analysis["level"],
+     analysis["action"],
+  )
 
-    if action == "block":
-        # ── Organigramme : Risque élevé → Blocage du dispositif ─────────
-        log.critical("[BLOCAGE] Blocage du device %s (score=%.3f)", device_id, risk)
-        registry.update_device_status(device_id, DeviceStatus.BLOCKED)
-        audit.log_event("device_blocked", {
-            "device_id": device_id, "risk_score": risk,
-            "reasons": analysis.get("reasons", [])
-        })
-        _notify_device(device_id, "block", risk, analysis.get("reasons", []))
-
-    elif action == "enhanced_monitoring":
-        # ── Organigramme : Risque modéré → Surveillance renforcée ────────
-        log.warning("[MONITORING+] Surveillance renforcée pour %s (score=%.3f)",
-                    device_id, risk)
-        registry.update_device_status(device_id, DeviceStatus.MONITORED)
-        audit.log_event("enhanced_monitoring", {
-            "device_id": device_id, "risk_score": risk
-        })
-        _notify_device(device_id, "enhanced_monitoring", risk, [])
+    _apply_decision(device_id, analysis)
 # ── Écriture InfluxDB ─────────────────────────────────────────────────────
-    if INFLUX_AVAILABLE:
-        try:
-            write_prediction(
-                device_id=device_id,
-                action=action,
-                risk_score=risk,
-                explanation=reasons,
-                data=data,
-                level=level,
-                confidence=confidence,
-            )
-            log.info("[INFLUX] Prédiction écrite pour %s", device_id)
-        except Exception as exc:
-            log.error("[INFLUX] Écriture échouée pour %s : %s", device_id, exc)
+   
  
     return jsonify({
         "action":     action,
