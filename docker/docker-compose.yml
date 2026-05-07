@@ -69,6 +69,8 @@ services:
       - PKI_URL=https://backend:8443
       - MQTT_BROKER=mqtt
       - CA_CERT=/app/pki/ca.crt
+      - CERT_STORE_DIR=/tmp/devices_certs
+      - VERIFY_TLS_BACKEND=false
      restart: unless-stopped
 
 volumes:

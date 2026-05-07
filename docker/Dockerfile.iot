@@ -2,7 +2,7 @@
 FROM python:3.12-slim
 
 WORKDIR /app
-RUN apt-get update && apt-get install -y softhsm2 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y softhsm2 libengine-pkcs11-openssl openssl libp11-kit0 && rm -rf /var/lib/apt/lists/*
 RUN softhsm2-util --init-token --slot 0 --label "iot-token" --so-pin 1234 --pin 1234
 
 #Instqller les dependqnces
