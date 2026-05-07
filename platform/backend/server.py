@@ -280,11 +280,11 @@ def receive_data():
    
  
     return jsonify({
-        "action":     action,
-        "risk_score": risk,
-        "risk_level": level,
-        "reasons":    reasons,
-        "confidence": confidence,
+        "action":     analysis["action"],
+        "risk_score": analysis["risk_score"],
+        "risk_level": analysis["level"],
+        "reasons":    analysis["reasons"],
+        "confidence": analysis.get("confidence", 0.0),
         "timestamp":  time.time(),
     })
 # ---------------------------------------------------------------------------
@@ -480,7 +480,7 @@ def _extract_auth_row(data: Dict[str, Any]) -> Dict[str, Any]:
      "latency_ms":          auth.get("tls_latency_ms", 0.0),
      "auth_result":         auth.get("auth_result", "Failure"),
      "secure_element_used": str(auth.get("secure_element_used", False)),
-     "auth_method":         auth.get("auth_method", "mtls_Software"),
+     "auth_method":         auth.get("auth_method", "mTLS_Software"),
      "attack_type":         "None",
     }
 # ---------------------------------------------------------------------------
