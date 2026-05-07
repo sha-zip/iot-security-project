@@ -573,7 +573,7 @@ def _fallback_heuristic(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         risk += 5
         reasons.append(f"Latence TLS élevée : {latency:.0f} ms")
 
-    se_used = auth.get("secure_elment_used", True)
+    se_used = auth.get("secure_element_used", True)
     if str(se_used).lower() in ("false", "0"):
      risk += 10
      reasons.append("Secure Element non utilise - cle prive en logical")
