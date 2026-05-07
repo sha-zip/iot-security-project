@@ -55,7 +55,7 @@ services:
       - mqtt
      restart: unless-stopped
 
-    iot-agent:
+    iot-agent-1:
      volumes:
       - /var/lib/softhsm/tokens:/var/lib/softhsm/tokens
      build:
@@ -66,12 +66,32 @@ services:
       - mqtt
       - backend
      environment:
+      - DEVICE_ID=iot-device-001    # fixe et unique
       - PKI_URL=https://backend:8443
       - MQTT_BROKER=mqtt
       - CA_CERT=/app/pki/ca.crt
-      - CERT_STORE_DIR=/tmp/devices_certs
       - VERIFY_TLS_BACKEND=false
      restart: unless-stopped
+       
+    iot-agent-2:
+     build:
+      context: ..
+      dockerfile: docker/Dockerfile.iot
+     environment:
+      - DEVICE_ID=iot-device-002    # fixe et unique
+      - PKI_URL=https://backend:8443
+      - MQTT_BROKER=mqtt
+      - CA_CERT=/app/pki/ca.crt
+
+    iot-agent-3:
+     build:
+      context: ..
+      dockerfile: docker/Dockerfile.iot
+     environment:
+      - DEVICE_ID=iot-device-003    # fixe et unique
+      - PKI_URL=https://backend:8443
+      - MQTT_BROKER=mqtt
+      - CA_CERT=/app/pki/ca.crt
 
 volumes:
     influxdb-data:
