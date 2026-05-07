@@ -110,6 +110,8 @@ class IoTAgent:
         self._running: bool = False
         self._send_thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
+        self._failed_attempts: int = 0        # ← nouveau
+        self._tls_connect_time: float = 0.0   # ← nouveau
 
         log.info("Agent IoT créé — Device-ID : %s", self.device_id)
 
@@ -361,6 +363,7 @@ class IoTAgent:
             return False
 
         # Tentative de connexion
+        _t0 = time.time()   # ← nouveau
         try:
             self.mqtt_client.connect(
                 MQTT_BROKER,
@@ -374,6 +377,7 @@ class IoTAgent:
         except OSError as exc:
             log.error("[REFUS CONNEXION] Erreur réseau : %s", exc)
             return False
+        self._tls_connect_time = round((time.time() - _t0) * 1000, 2)  # ← nouveau
 
         # Démarrer la boucle MQTT en arrière-plan
         self.mqtt_client.loop_start()
@@ -459,16 +463,37 @@ class IoTAgent:
                 "Arrêt de l'agent."
             )
 
+    def _get_auth_method(self) -> str:        # ← ici
+        """
+        Retourne la méthode d'auth compatible avec la dataset IA.
+        - mTLS_SE       : SE disponible + clé pkcs11 (fichier _private.pem généré par SE)
+        - Challenge_SE  : SE disponible mais clé éphémère (fallback du SE)
+        - mTLS_Software : pas de SE du tout
+        """
+        if self.se is None:
+            return "mTLS_Software"
+        
+        possible_key = os.path.join(CERT_STORE_DIR, f"{self.device_id}_private.pem")
+        if os.path.exists(possible_key):
+            return "mTLS_SE"     # clé vient du Secure Element
+        else:
+            return "Challenge_SE"    # SE présent mais clé éphémère (simulation)
+
     def _build_telemetry_payload(self) -> Dict[str, Any]:
         """Construit la charge utile de télémétrie."""
         import random
         return {
             "device_id":   self.device_id,
             "timestamp":   time.time(),
-            "temperature": round(20 + random.uniform(-2, 2), 2),
-            "humidity":    round(50 + random.uniform(-5, 5), 2),
-            "uptime_s":    int(time.time()),
             "fingerprint": self.se.get_device_fingerprint() if self.se else "",
+            "auth": {
+             "auth_result":         "Success" if self.state == AgentState.CONNECTED else "Failure",
+             "auth_method":         self._get_auth_method(),
+             "secure_element_used": self.se is not None,
+             "tls_latency_ms":      self._tls_connect_time,
+             "failed_attempts_24h": self._failed_attempts,
+                }
+            
         }
 
     # ------------------------------------------------------------------
@@ -483,11 +508,13 @@ class IoTAgent:
             self.state = AgentState.CONNECTED
         elif rc == 5:
             log.error("[REFUS CONNEXION] Authentification refusée (rc=5).")
+            self._failed_attempts += 1   # ← nouveau
             self.state = AgentState.BLOCKED
         else:
             log.error(
                 "[REFUS CONNEXION] Connexion refusée par le broker (rc=%d).", rc
             )
+            self._failed_attempts += 1   # ← nouveau
             self.state = AgentState.BLOCKED
 
     def _on_mqtt_disconnect(self, client, userdata, rc, properties=None):
