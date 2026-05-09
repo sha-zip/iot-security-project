@@ -43,7 +43,7 @@ import datetime
 # Imports locaux
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from device_registry import DeviceRegistry, DeviceStatus
-from logger import AuditLogger
+
 
 # ── Chemins ──────────────────────────────────────────────────────────────────
 ROOT_DIR  = Path(__file__).resolve().parent
@@ -118,6 +118,12 @@ if REGISTRY_AVAILABLE:
 else:
     registry = audit = None
     log.warning("DeviceRegistry non disponibles.")
+def _audit(event_type: str, details: dict = None) -> None:
+ if INFLUX_AVAILABLE:
+  try:
+   write_device_event(event_type=event_type, device_id=(details or {}).get("device_id", "unknown"), details=details or {})
+  except Exception as exc:
+   log.warning("[AUDIT] InfluxDB échoué : %s", exc)
  
 # ── Chargement du modèle IA ───────────────────────────────────────────────────
 _attack_model: Optional["AttackModel"] = None
