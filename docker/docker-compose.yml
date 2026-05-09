@@ -51,8 +51,12 @@ services:
       - SERVER_KEY=/app/pki/server.key
       - MQTT_CLIENT_CERT=/app/pki/server.crt    # reuse server cert
       - MQTT_CLIENT_KEY=/app/pki/server.key
+      - DB_PATH=/app/backend/logs.db
+     volumes:
+      - backend-db:/app/backend   
      depends_on:
       - mqtt
+      - influxdb
      restart: unless-stopped
 
     iot-agent-1:
@@ -96,3 +100,4 @@ services:
 volumes:
     influxdb-data:
     grafana-data:
+    backend-db:  
