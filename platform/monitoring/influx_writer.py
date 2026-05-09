@@ -65,9 +65,9 @@ def write_prediction(device_id, action, risk_score, explanation, data, level="LO
      .field("explanation",         json.dumps(explanation))
      .time(datetime.utcnow(), WritePrecision.NS)
 )
-    write_api.write(bucket=bucket, org=org, record=point)
+    
     try:
-     write_api.write(bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=point)
+     write_api.write(bucket=bucket, org=org, record=point)
      log.debug("[INFLUX] iot_predictions écrit : device=%s action=%s score=%d",
        device_id, action, risk_score)
     except Exception as exc:
@@ -107,7 +107,7 @@ def write_device_event(
     )
  
     try:
-        write_api.write(bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=point)
+        write_api.write(bucket=bucket, org=org, record=point)
         log.debug("[INFLUX] iot_events écrit : event=%s device=%s",
                   event_type, device_id)
     except Exception as exc:
@@ -139,7 +139,7 @@ def write_device_status(device_id: str, status: str) -> None:
     )
  
     try:
-        write_api.write(bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=point)
+        write_api.write(bucket=bucket, org=org, record=point)
         log.debug("[INFLUX] iot_device_status écrit : device=%s status=%s",
                   device_id, status)
     except Exception as exc:
