@@ -55,7 +55,6 @@ sys.path.insert(0, str(AI_DIR))
 # ── Registre & Audit ─────────────────────────────────────────────────────────
 try:
     from device_registry import DeviceRegistry, DeviceStatus
-    from logger import AuditLogger
     REGISTRY_AVAILABLE = True
 except ImportError:
     REGISTRY_AVAILABLE = False
@@ -73,7 +72,7 @@ except ImportError as _ai_err:
  
 # ── InfluxDB ──────────────────────────────────────────────────────────────────
 try:
-    from influx_writer import write_prediction, write_log
+    from influx_writer import write_prediction, write_device_event, write_device_status
     INFLUX_AVAILABLE = True
 except ImportError:
     INFLUX_AVAILABLE = False
@@ -116,10 +115,9 @@ Path(CERTS_DIR).mkdir(parents=True, exist_ok=True)
 app     = Flask(__name__)
 if REGISTRY_AVAILABLE:
     registry = DeviceRegistry(DB_PATH)
-    audit    = AuditLogger(DB_PATH)
 else:
     registry = audit = None
-    log.warning("DeviceRegistry / AuditLogger non disponibles.")
+    log.warning("DeviceRegistry non disponibles.")
  
 # ── Chargement du modèle IA ───────────────────────────────────────────────────
 _attack_model: Optional["AttackModel"] = None
@@ -182,15 +180,16 @@ def enroll_device():
     fingerprint = str(data.get("fingerprint", "")).strip()
 
     log.info("[ENROLL] Device=%s fingerprint=%s", device_id, fingerprint[:16])
-    audit.log_event("enroll_attempt", {
-        "device_id": device_id, "fingerprint": fingerprint, "ip": request.remote_addr
+    _audit("enroll_attempt", {
+        "device_id":   device_id,
+        "fingerprint": fingerprint,
+        "ip":          request.remote_addr,
     })
-
     # ── Validation de la CSR ─────────────────────────────────────────────
     valid, reason = _validate_csr(csr_pem, device_id)
     if not valid:
         log.warning("[REJET CSR] device=%s raison=%s", device_id, reason)
-        audit.log_event("csr_rejected", {"device_id": device_id, "reason": reason})
+        _audit("csr_rejected", {"device_id": device_id, "reason": reason})
         return jsonify({"status": "rejected", "reason": reason})
 
     # ── Signature du certificat par la CA ────────────────────────────────
@@ -199,7 +198,7 @@ def enroll_device():
 
     if err:
         log.error("[ÉCHEC CERT] device=%s erreur=%s", device_id, err)
-        audit.log_event("cert_failed", {"device_id": device_id, "error": err})
+         _audit("cert_failed", {"device_id": device_id, "reason": err})
         return jsonify({"status": "cert_failed", "reason": err})
 
     # ── Enregistrement du device dans le registre ─────────────────────────
@@ -210,13 +209,16 @@ def enroll_device():
     )
 
     log.info("[OK] Certificat émis pour device=%s", device_id)
-    audit.log_event("cert_issued", {"device_id": device_id})
-
+    _audit("cert_issued", {"device_id": device_id})
+ # Statut device dans InfluxDB (pour Grafana)
+    if INFLUX_AVAILABLE:
+        write_device_status(device_id, "active")
+ 
+    log.info("[OK] Certificat émis pour device=%s", device_id)
     return jsonify({
         "status":      "cert_generated",
         "certificate": cert_pem,
     })
-
 
 # ---------------------------------------------------------------------------
 # ── Étape 8-N : Réception des données + pipeline IA
@@ -256,7 +258,7 @@ def receive_data():
         return jsonify({"action": "block", "reason": "device bloqué"}), 403
 
     # ── Enregistrement de l'événement ───────────────────────────────────
-    audit.log_event("data_received", {
+    _audit("data_received", {
         "device_id": device_id,
         "timestamp": data.get("timestamp"),
     })
@@ -311,7 +313,11 @@ def revoke_device(device_id: str):
     err = _revoke_certificate(device_id)
     registry.update_device_status(device_id, DeviceStatus.BLOCKED)
     _notify_device(device_id, "revoke_cert", 1.0, ["manuel"])
-    audit.log_event("cert_revoked", {"device_id": device_id, "admin": True})
+     _audit("cert_revoked", {"device_id": device_id, "admin": True})
+ 
+    # Statut dans InfluxDB
+    if INFLUX_AVAILABLE:
+        write_device_status(device_id, "blocked")
 
     return jsonify({"status": "revoked", "device_id": device_id})
 
@@ -611,14 +617,23 @@ def _apply_decision(device_id: str, analysis: Dict[str, Any]) -> None:
     if action == "block":
         log.critical("[BLOCAGE] %s (score=%d)", device_id, risk)
         registry.update_device_status(device_id, DeviceStatus.BLOCKED)
-        audit.log_event("device_blocked", {
-            "device_id": device_id, "risk_score": risk, "reasons": reasons
+         _audit("device_blocked", {
+            "device_id":  device_id,
+            "risk_score": risk,
+            "reasons":    reasons,
         })
+        if INFLUX_AVAILABLE:
+            write_device_status(device_id, "blocked")
  
     elif action == "enhanced_monitoring":
         log.warning("[MONITORING+] %s (score=%d)", device_id, risk)
         registry.update_device_status(device_id, DeviceStatus.MONITORED)
-        audit.log_event("enhanced_monitoring", {"device_id": device_id, "risk_score": risk})
+        _audit("enhanced_monitoring", {
+            "device_id":  device_id,
+            "risk_score": risk,
+        })
+        if INFLUX_AVAILABLE:
+            write_device_status(device_id, "monitored")
  
     # Toujours notifier le device, quelle que soit l'action
     _notify_device(device_id, action, risk, reasons, predicted, level, confidence)
