@@ -198,7 +198,7 @@ def enroll_device():
 
     if err:
         log.error("[ÉCHEC CERT] device=%s erreur=%s", device_id, err)
-         _audit("cert_failed", {"device_id": device_id, "reason": err})
+        _audit("cert_failed", {"device_id": device_id, "reason": err})
         return jsonify({"status": "cert_failed", "reason": err})
 
     # ── Enregistrement du device dans le registre ─────────────────────────
@@ -313,7 +313,7 @@ def revoke_device(device_id: str):
     err = _revoke_certificate(device_id)
     registry.update_device_status(device_id, DeviceStatus.BLOCKED)
     _notify_device(device_id, "revoke_cert", 1.0, ["manuel"])
-     _audit("cert_revoked", {"device_id": device_id, "admin": True})
+    _audit("cert_revoked", {"device_id": device_id, "admin": True})
  
     # Statut dans InfluxDB
     if INFLUX_AVAILABLE:
@@ -617,7 +617,7 @@ def _apply_decision(device_id: str, analysis: Dict[str, Any]) -> None:
     if action == "block":
         log.critical("[BLOCAGE] %s (score=%d)", device_id, risk)
         registry.update_device_status(device_id, DeviceStatus.BLOCKED)
-         _audit("device_blocked", {
+        _audit("device_blocked", {
             "device_id":  device_id,
             "risk_score": risk,
             "reasons":    reasons,
@@ -730,10 +730,7 @@ def start_mqtt_subscriber():
             if device["status"] == DeviceStatus.BLOCKED:
                 return
             registry.update_last_seen(device_id)
-            audit.log_event("data_received", {
-                "device_id": device_id,
-                "timestamp": data.get("timestamp"),
-            })
+            _audit("data_received", {"device_id": device_id, "timestamp": data.get("timestamp")})
  
             analysis = _run_ai_pipeline(device_id, data)
             _apply_decision(device_id, analysis)
