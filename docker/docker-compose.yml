@@ -53,7 +53,13 @@ services:
       - MQTT_CLIENT_KEY=/app/pki/server.key
       - DB_PATH=/app/backend/logs.db
      volumes:
-      - backend-db:/app/backend   
+      - backend-db:/app/backend
+     healthcheck:                    # 2. healthcheck après environment
+      test: ["CMD", "curl", "-k", "-f", "https://localhost:8443/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
      depends_on:
       - mqtt
       - influxdb
@@ -67,8 +73,10 @@ services:
       dockerfile: docker/Dockerfile.iot
 
      depends_on:
-      - mqtt
-      - backend
+      backend:
+      condition: service_healthy  # ← attend que backend soit healthy
+       mqtt:
+        condition: service_started
      environment:
       - DEVICE_ID=iot-device-001    # fixe et unique
       - PKI_URL=https://backend:8443
@@ -81,6 +89,11 @@ services:
      build:
       context: ..
       dockerfile: docker/Dockerfile.iot
+     depends_on:
+      backend:
+       condition: service_healthy  # ← attend que backend soit healthy
+      mqtt:
+       condition: service_started
      environment:
       - DEVICE_ID=iot-device-002    # fixe et unique
       - PKI_URL=https://backend:8443
@@ -91,6 +104,11 @@ services:
      build:
       context: ..
       dockerfile: docker/Dockerfile.iot
+     depends_on:
+      backend:
+       condition: service_healthy  # ← attend que backend soit healthy
+      mqtt:
+       condition: service_started
      environment:
       - DEVICE_ID=iot-device-003    # fixe et unique
       - PKI_URL=https://backend:8443
