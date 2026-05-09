@@ -71,12 +71,11 @@ services:
      build:
       context: ..
       dockerfile: docker/Dockerfile.iot
-
      depends_on:
       backend:
-      condition: service_healthy  # ← attend que backend soit healthy
-       mqtt:
-        condition: service_started
+       condition: service_healthy  # ← attend que backend soit healthy
+      mqtt:
+       condition: service_started
      environment:
       - DEVICE_ID=iot-device-001    # fixe et unique
       - PKI_URL=https://backend:8443
@@ -118,4 +117,4 @@ services:
 volumes:
     influxdb-data:
     grafana-data:
-    backend-db:  
+    backend-db:
