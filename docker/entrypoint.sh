@@ -106,6 +106,9 @@ if [ -f "${CERT_PATH}" ] && [ -f "${KEY_PATH}" ]; then
     ls -la "${CERT_PATH}" "${KEY_PATH}"
 else
     echo "[INIT] Lancement de agent.py en mode enrôlement..."
+    #DEBUG CA CERT
+    echo "[DEBUG] CA  cert check before enrollement"
+    ls -la "${CA_CERT}" || echo "CA cert MISSING AT ${CA_CERT}"
     rm -f /tmp/cert_ready
 
     export CERT_ONLY_MODE=1
