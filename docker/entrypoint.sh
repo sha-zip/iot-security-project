@@ -106,6 +106,14 @@ echo "[INIT] stunnel.conf généré."
 # Le certificat est généré par agent.py via la PKI.
 # stunnel sera lancé APRÈS que agent.py ait obtenu son certificat.
 # agent.py écrit un fichier signal quand le cert est prêt.
+# Générer la clé privée éphémère si absente
+mkdir -p /tmp/device_certs
+if [ ! -f "/tmp/device_certs/${DEVICE_ID}_private.pem" ]; then
+    echo "[INIT] Génération de la clé privée éphémère..."
+    openssl genrsa -out /tmp/device_certs/${DEVICE_ID}_private.pem 2048
+    chmod 600 /tmp/device_certs/${DEVICE_ID}_private.pem
+    echo "[INIT] Clé privée générée."
+fi
 
 echo "[INIT] Lancement de agent.py (obtention du certificat)..."
 
