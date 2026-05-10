@@ -2,8 +2,13 @@
 FROM python:3.12-slim
 
 WORKDIR /app
-RUN apt-get update && apt-get install -y softhsm2 libengine-pkcs11-openssl openssl libp11-kit0 && rm -rf /var/lib/apt/lists/*
-RUN softhsm2-util --init-token --slot 0 --label "iot-token" --so-pin 1234 --pin 1234
+RUN apt-get update && apt-get install -y \
+    softhsm2 \
+    stunnel4 \
+    openssl \
+    libp11-kit0 \
+    && rm -rf /var/lib/apt/lists/*
+
 
 #Instqller les dependqnces
 COPY devices/iot_agent/requirements.txt /app/requirements.txt
@@ -15,5 +20,10 @@ COPY devices/iot_agent/ /app/
 COPY devices/secure_element/se_module.py /app/se_module.py
 #Copier les certificaat PKI necessaires
 COPY pki/ /app/pki/
+COPY docker/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+RUN mkdir -p /etc/stunnel
 
-CMD [ "python", "agent.py"]
+ 
+ENTRYPOINT ["/app/entrypoint.sh"]
+
