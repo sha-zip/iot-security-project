@@ -46,6 +46,7 @@ services:
      environment:
       - MQTT_BROKER=mqtt
       - MQTT_PORT=8883
+      - MQTT_TLS_INSECURE=true
       - CA_CERT=/app/pki/ca.crt
       - SERVER_CERT=/app/pki/server.crt
       - SERVER_KEY=/app/pki/server.key
@@ -55,7 +56,7 @@ services:
      volumes:
       - backend-db:/app/backend
      healthcheck:                    # 2. healthcheck après environment
-      test: ["CMD", "curl", "-k", "-f", "https://localhost:8443/api/v1/health"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('https://localhost:8443/api/v1/health', context=__import__('ssl')._create_unverified_context())"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -2,12 +2,8 @@
 FROM python:3.12-slim
 
 WORKDIR /app
-RUN apt-get update && apt-get install -y \
-    softhsm2 \
-    stunnel4 \
-    openssl \
-    libp11-kit0 \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y softhsm2 libsofthsm2 stunnel4 opensc openssl libengine-pkcs11-openssl p11-kit && rm -rf /var/lib/apt/lists/*
+
 
 
 #Instqller les dependqnces
