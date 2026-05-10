@@ -57,3 +57,6 @@ pki/*.pem
 *.pkl
 *.pkl
 /platform/ai_engine/attack_model.pkl
+stunnel-latest.tar.gz
+stunnel-*.tar.gz
+stunnel-5.*/
