@@ -8,12 +8,9 @@ FROM python:3.12-slim
 WORKDIR /app
  
 # ── Dépendances système ───────────────────────────────────────
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     # Build tools pour stunnel
-    build-essential \
     libssl-dev \
-    pkg-config \
-    wget \
     # SoftHSM2 + PKCS#11
     softhsm2 \
     libsofthsm2 \
@@ -23,23 +20,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
  
 # ── Compiler stunnel depuis les sources ───────────────────────
-# Garantit Compiled == Running (même OpenSSL que le système)
-RUN wget -q https://www.stunnel.org/downloads/stunnel-latest.tar.gz \
-    && tar xzf stunnel-latest.tar.gz \
-    && cd stunnel-5.78 \
-    && ./configure \
-    && make -j$(nproc) \
-    && make install \
-    && cd .. \
-    && rm -rf stunnel-5.78 stunnel-latest.tar.gz
+COPY docker/stunnel-5.78/src/stunnel /usr/local/bin/stunnel
+RUN chmod +x /usr/local/bin/stunnel
  
 # Vérification : pas de mismatch OpenSSL
 RUN stunnel -version 2>&1 | grep -E "Compiled|Running"
- 
-# ── Purger les outils de build (image plus légère) ────────────
-RUN apt-get purge -y build-essential wget \
-    && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/*
  
 # ── Dépendances Python ────────────────────────────────────────
 COPY devices/iot_agent/requirements.txt /app/requirements.txt

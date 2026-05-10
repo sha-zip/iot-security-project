@@ -15,12 +15,20 @@ MQTT_BROKER="${MQTT_BROKER:-mqtt}"
 MQTT_PORT="${MQTT_PORT:-8883}"
 CA_CERT="${CA_CERT:-/app/pki/ca.crt}"
 
-# Port local stunnel (différent de 1883 pour éviter le conflit avec Mosquitto)
+# Port local stunnel (FIXE et UNIQUE)
 STUNNEL_LOCAL_PORT=11883
 
 mkdir -p "${CERT_STORE}"
 mkdir -p /etc/stunnel
 mkdir -p /var/log/stunnel
+
+echo "==============================================================="
+echo "ENTRYPOINT START — Device: $DEVICE_ID"
+echo "==============================================================="
+echo "STUNNEL_LOCAL_PORT: $STUNNEL_LOCAL_PORT"
+echo "MQTT_BROKER: $MQTT_BROKER:$MQTT_PORT"
+echo "CA_CERT: $CA_CERT"
+echo "==============================================================="
 
 # ── 1. Initialiser le token SoftHSM si absent ────────────────────────────
 echo "[INIT] Vérification token SoftHSM : ${TOKEN_LABEL}"
@@ -41,31 +49,35 @@ fi
 # ── 2. Vérifier/générer la clé RSA dans le token ────────────────────────
 echo "[INIT] Vérification clé RSA dans le token..."
 
-python3 - << PYEOF
+python3 << 'PYEOF'
 import os, sys, pkcs11
 from pkcs11 import Attribute, ObjectClass, KeyType
 
 try:
-    lib = pkcs11.lib("${PKCS11_LIB}")
-    tokens = list(lib.get_tokens(token_label="${TOKEN_LABEL}"))
+    lib = pkcs11.lib(os.getenv("PKCS11_LIB", "/usr/lib/softhsm/libsofthsm2.so"))
+    token_label = os.getenv("SE_TOKEN_LABEL", "iot-token")
+    user_pin = os.getenv("SE_USER_PIN", "1234")
+    key_label = os.getenv("SE_KEY_LABEL", "iot-device-key")
+    
+    tokens = list(lib.get_tokens(token_label=token_label))
     if not tokens:
         print("[INIT] ERREUR : Token introuvable depuis Python")
         sys.exit(1)
 
-    session = tokens[0].open(user_pin="${USER_PIN}", rw=True)
+    session = tokens[0].open(user_pin=user_pin, rw=True)
     keys = list(session.get_objects({
         Attribute.CLASS: ObjectClass.PRIVATE_KEY,
-        Attribute.LABEL: "${KEY_LABEL}",
+        Attribute.LABEL: key_label,
     }))
     session.close()
 
     if keys:
-        print("[INIT] Clé '${KEY_LABEL}' déjà présente dans le token.")
+        print("[INIT] Clé présente dans le token.")
     else:
-        print("[INIT] Clé absente — génération RSA-2048...")
-        session = tokens[0].open(user_pin="${USER_PIN}", rw=True)
+        print("[INIT] Génération RSA-2048...")
+        session = tokens[0].open(user_pin=user_pin, rw=True)
         pub, priv = session.generate_keypair(
-            KeyType.RSA, 2048, store=True, label="${KEY_LABEL}",
+            KeyType.RSA, 2048, store=True, label=key_label,
             public_template={
                 Attribute.TOKEN: True,
                 Attribute.VERIFY: True,
@@ -74,38 +86,33 @@ try:
                 Attribute.TOKEN:       True,
                 Attribute.PRIVATE:     True,
                 Attribute.SENSITIVE:   True,
-                Attribute.EXTRACTABLE: False,   # clé non exportable
+                Attribute.EXTRACTABLE: False,
                 Attribute.SIGN:        True,
             },
         )
         session.close()
         print("[INIT] Paire RSA-2048 générée dans SoftHSM.")
 except Exception as e:
-    print(f"[INIT] ERREUR PKCS#11 : {e}")
+    print(f"[INIT] ERREUR PKCS#11 : {e}", file=sys.stderr)
     sys.exit(1)
 PYEOF
 
 # ── 3. Obtenir le certificat via agent.py (mode enrôlement) ─────────────
-# agent.py va :
-#   Init SE → Générer CSR → Envoyer PKI → Recevoir cert → Stocker → exit
-# On détecte la fin via le fichier signal /tmp/cert_ready
-
 CERT_PATH="${CERT_STORE}/${DEVICE_ID}.crt"
 KEY_PATH="${CERT_STORE}/${DEVICE_ID}_private.pem"
 
 if [ -f "${CERT_PATH}" ] && [ -f "${KEY_PATH}" ]; then
-    echo "[INIT] Certificat déjà présent : ${CERT_PATH}"
+    echo "[INIT] Certificat et clé déjà présents"
+    ls -la "${CERT_PATH}" "${KEY_PATH}"
 else
-    echo "[INIT] Lancement de agent.py en mode enrôlement (--cert-only)..."
+    echo "[INIT] Lancement de agent.py en mode enrôlement..."
     rm -f /tmp/cert_ready
 
-    # CERT_ONLY_MODE : agent.py s'arrête après avoir stocké le certificat
     export CERT_ONLY_MODE=1
     python3 /app/agent.py &
     AGENT_PID=$!
 
-    # Attendre le fichier signal (max 90s)
-    TIMEOUT=90
+    TIMEOUT=120
     ELAPSED=0
     while [ ! -f "/tmp/cert_ready" ] && [ $ELAPSED -lt $TIMEOUT ]; do
         sleep 2
@@ -113,12 +120,11 @@ else
         echo "[INIT] Attente certificat... ${ELAPSED}s/${TIMEOUT}s"
     done
 
-    # Arrêter agent.py mode enrôlement
     kill $AGENT_PID 2>/dev/null || true
     wait $AGENT_PID 2>/dev/null || true
 
     if [ ! -f "/tmp/cert_ready" ]; then
-        echo "[ERREUR] Certificat non obtenu après ${TIMEOUT}s. Vérifiez la PKI."
+        echo "[ERREUR] Certificat non obtenu après ${TIMEOUT}s"
         exit 1
     fi
 
@@ -132,80 +138,97 @@ else
         exit 1
     fi
 
-    echo "[OK] Certificat obtenu et stocké."
+    echo "[OK] Certificat et clé obtenu(e)s"
+    ls -la "${CERT_PATH}" "${KEY_PATH}"
 fi
 
-# ── 4. Générer stunnel.conf avec les bons chemins ───────────────────────
-echo "[INIT] Génération de /etc/stunnel/stunnel.conf..."
+# ── 4. Vérifier que les fichiers existent et sont accessibles ────────────
+echo "[INIT] Vérification des fichiers de certificat..."
+if [ ! -f "${CERT_PATH}" ]; then
+    echo "[ERREUR] Certificat manquant : ${CERT_PATH}"
+    exit 1
+fi
+if [ ! -f "${KEY_PATH}" ]; then
+    echo "[ERREUR] Clé privée manquante : ${KEY_PATH}"
+    exit 1
+fi
+if [ ! -f "${CA_CERT}" ]; then
+    echo "[ERREUR] CA cert manquant : ${CA_CERT}"
+    exit 1
+fi
 
-cat > /etc/stunnel/stunnel.conf << EOF
+echo "[OK] Tous les certificats sont présents"
+chmod 644 "${CERT_PATH}"
+chmod 600 "${KEY_PATH}"
+chmod 644 "${CA_CERT}"
+
+# ── 5. Générer stunnel.conf ───────────────────────────────────────────────
+echo "[INIT] Génération de stunnel.conf..."
+
+cat > /etc/stunnel/stunnel.conf << 'STUNNEL_EOF'
 ; stunnel.conf — Client mTLS MQTT
-; Généré automatiquement par entrypoint.sh
-; Flux : agent.py → 127.0.0.1:${STUNNEL_LOCAL_PORT} → stunnel → ${MQTT_BROKER}:${MQTT_PORT} (mTLS)
-
 foreground = yes
-debug = 4
-output = /var/log/stunnel/stunnel.log
-pid = /tmp/stunnel.pid
+debug = 7
+output = stdout
 
-; Désactiver les protocoles obsolètes
+; Désactiver protocoles obsolètes
 options = NO_SSLv2
 options = NO_SSLv3
 options = NO_TLSv1
 options = NO_TLSv1_1
 
 [mqtts-client]
-; Mode client : stunnel chiffre vers le broker
-client  = yes
-
-; Port TCP local — agent.py se connecte ici (MQTT_PORT=11883 dans agent.py)
-accept  = 127.0.0.1:${STUNNEL_LOCAL_PORT}
-
-; Broker MQTT avec TLS
-connect = ${MQTT_BROKER}:${MQTT_PORT}
-
-; Certificat de l'agent (obtenu via PKI dans l'étape 3)
-cert   = ${CERT_PATH}
-key    = ${KEY_PATH}
-
-; CA pour vérifier le certificat du broker (anti-MITM)
-CAfile = ${CA_CERT}
-
-; Authentification mutuelle
-verifyChain = yes
-checkHost   = ${MQTT_BROKER}
-
-sslVersion   = TLSv1.2
+client      = yes
+accept      = 127.0.0.1:11883
+connect     = MQTT_BROKER:MQTT_PORT
+cert        = CERT_PATH
+key         = KEY_PATH
+CAfile      = CA_CERT_FILE
+verify      = 2
+checkHost   = MQTT_BROKER
+sslVersion  = TLSv1.2
 TIMEOUTclose = 5
 sessionResume = no
-EOF
+STUNNEL_EOF
 
-echo "[INIT] stunnel.conf généré (port local : ${STUNNEL_LOCAL_PORT})."
+# Remplacer les placeholders
+sed -i "s|MQTT_BROKER|${MQTT_BROKER}|g" /etc/stunnel/stunnel.conf
+sed -i "s|MQTT_PORT|${MQTT_PORT}|g" /etc/stunnel/stunnel.conf
+sed -i "s|CERT_PATH|${CERT_PATH}|g" /etc/stunnel/stunnel.conf
+sed -i "s|KEY_PATH|${KEY_PATH}|g" /etc/stunnel/stunnel.conf
+sed -i "s|CA_CERT_FILE|${CA_CERT}|g" /etc/stunnel/stunnel.conf
 
-# ── 5. Lancer stunnel en arrière-plan ────────────────────────────────────
+echo "[OK] stunnel.conf généré"
+cat /etc/stunnel/stunnel.conf
+
+# ── 6. Lancer stunnel en arrière-plan ────────────────────────────────────
 echo "[INIT] Démarrage de stunnel..."
 stunnel /etc/stunnel/stunnel.conf &
 STUNNEL_PID=$!
-sleep 2
+sleep 3
 
-# Vérifier que stunnel tourne
 if ! kill -0 $STUNNEL_PID 2>/dev/null; then
-    echo "[ERREUR] stunnel n'a pas démarré. Vérifiez la config et les certificats."
-    cat /var/log/stunnel/stunnel.log 2>/dev/null || true
+    echo "[ERREUR] stunnel n'a pas démarré"
     exit 1
 fi
 
-echo "[OK] stunnel actif — 127.0.0.1:${STUNNEL_LOCAL_PORT} → ${MQTT_BROKER}:${MQTT_PORT} (mTLS)"
+echo "[OK] stunnel est actif (PID=$STUNNEL_PID)"
+echo "[OK] Port local: 127.0.0.1:${STUNNEL_LOCAL_PORT}"
+echo "[OK] Connecté à: ${MQTT_BROKER}:${MQTT_PORT} (mTLS)"
 
-# ── 6. Lancer agent.py en mode normal ───────────────────────────────────
-echo "[INIT] Démarrage de agent.py (mode MQTT normal)..."
+# ── 7. Lancer agent.py en mode MQTT normal ───────────────────────────────
+echo "[INIT] Démarrage de agent.py (mode MQTT)..."
 
-# S'assurer que CERT_ONLY_MODE n'est plus actif
 unset CERT_ONLY_MODE
 
-# agent.py se connecte à stunnel local sur STUNNEL_LOCAL_PORT
+# CRITICAL: Force MQTT_BROKER et MQTT_PORT pour agent.py
 export MQTT_BROKER=127.0.0.1
 export MQTT_PORT=${STUNNEL_LOCAL_PORT}
+export STUNNEL_MODE=1
 
-# exec remplace le shell par agent.py (PID 1 dans le container)
+echo "[AGENT] MQTT_BROKER=$MQTT_BROKER"
+echo "[AGENT] MQTT_PORT=$MQTT_PORT"
+echo "[AGENT] STUNNEL_MODE=$STUNNEL_MODE"
+
+# Lancer agent.py
 exec python3 /app/agent.py

@@ -89,7 +89,7 @@ services:
       - DEVICE_ID=iot-device-001    # fixe et unique
       - PKI_URL=https://backend:8443
       - MQTT_BROKER=127.0.0.1
-      - MQTT_PORT=11883
+      - MQTT_PORT=8883
       - CA_CERT=/app/pki/ca.crt
       - CERT_STORE_DIR=/tmp/device_certs
       - VERIFY_TLS_BACKEND=false
@@ -98,6 +98,7 @@ services:
       - SE_USER_PIN=1234
       - SE_KEY_LABEL=iot-device-key
       - PKCS11_LIB=/usr/lib/softhsm/libsofthsm2.so
+      - SEND_INTERVAL=5.0
      restart: unless-stopped
      networks:
       - iot-net
@@ -117,7 +118,7 @@ services:
       - DEVICE_ID=iot-device-002    # fixe et unique
       - PKI_URL=https://backend:8443
       - MQTT_BROKER=127.0.0.1
-      - MQTT_PORT=11883
+      - MQTT_PORT=8883
       - CA_CERT=/app/pki/ca.crt
       - CERT_STORE_DIR=/tmp/device_certs
       - VERIFY_TLS_BACKEND=false
@@ -126,6 +127,7 @@ services:
       - SE_USER_PIN=1234
       - SE_KEY_LABEL=iot-device-key
       - PKCS11_LIB=/usr/lib/softhsm/libsofthsm2.so
+      - SEND_INTERVAL=5.0
      networks:
       - iot-net
 
@@ -144,7 +146,7 @@ services:
       - DEVICE_ID=iot-device-003    # fixe et unique
       - PKI_URL=https://backend:8443
       - MQTT_BROKER=127.0.0.1
-      - MQTT_PORT=11883
+      - MQTT_PORT=8883
       - CA_CERT=/app/pki/ca.crt
       - CERT_STORE_DIR=/tmp/device_certs
       - VERIFY_TLS_BACKEND=false
@@ -153,6 +155,7 @@ services:
       - SE_USER_PIN=1234
       - SE_KEY_LABEL=iot-device-key
       - PKCS11_LIB=/usr/lib/softhsm/libsofthsm2.so
+      - SEND_INTERVAL=5.0
      networks:
       - iot-net
 networks:
