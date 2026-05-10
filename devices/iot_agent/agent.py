@@ -1,25 +1,11 @@
 """
-agent.py — Agent IoT Sécurisé
-==============================
-Client MQTT qui implémente l'intégralité de l'organigramme :
-
-  Initialisation → Génération CSR → Envoi à la PKI (backend)
-    → Validation CSR → Signature certificat
-    → Stockage cert + clé privée (via SE)
-    → Tentative connexion TLS → Validation cert
-    → Connexion mTLS broker MQTT
-    → Envoi données → Analyse comportement (IA backend)
-    → Résultat : autorisation maintenue | anomalie → score risque
-      → blocage | surveillance renforcée
-
-Conformément au cahier des charges :
-  - Authentification mutuelle (mTLS) Objet ↔ Plateforme
-  - Clé privée protégée dans le Secure Element (SoftHSM/PKCS#11)
-  - On-boarding sécurisé
-  - Reconnexion / gestion des erreurs robuste
-
-Dépendances :
-    pip install paho-mqtt cryptography requests python-pkcs11
+agent.py — Agent IoT Sécurisé avec stunnel
+===========================================
+STUNNEL_MODE=1  → obtenir le cert et écrire /tmp/cert_ready puis s'arrêter
+STUNNEL_MODE absent → connexion localhost:1883 (stunnel gère le mTLS)
+ 
+Architecture :
+  agent.py → localhost:1883 (loopback) → stunnel → mqtt:8883 (mTLS+PKCS#11)
 """
 
 import os
@@ -63,16 +49,21 @@ log = logging.getLogger("agent")
 # ---------------------------------------------------------------------------
 DEVICE_ID       = os.getenv("DEVICE_ID",        str(uuid.uuid4()))
 PKI_URL         = os.getenv("PKI_URL",           "https://localhost:8443")
-MQTT_BROKER     = os.getenv("MQTT_BROKER",       "localhost")
-MQTT_PORT       = int(os.getenv("MQTT_PORT",     "8883"))
-MQTT_TOPIC_DATA = os.getenv("MQTT_TOPIC_DATA",   f"iot/{DEVICE_ID}/data")
-MQTT_TOPIC_CMD  = os.getenv("MQTT_TOPIC_CMD",    f"iot/{DEVICE_ID}/cmd")
+
 CA_CERT_PATH    = os.getenv("CA_CERT",           "/app/pki/ca.crt")
 CERT_STORE_DIR  = os.getenv("CERT_STORE_DIR",    "/tmp/device_certs")
 MAX_CSR_RETRIES = int(os.getenv("MAX_CSR_RETRIES", "3"))
 MAX_CERT_RETRIES= int(os.getenv("MAX_CERT_RETRIES","3"))
 SEND_INTERVAL   = float(os.getenv("SEND_INTERVAL", "5.0"))   # secondes
 VERIFY_TLS_BACKEND = os.getenv("VERIFY_TLS_BACKEND", "true").lower() == "true"
+#mode stunnel
+# Quand stunnel est actif : agent se connecte en clair sur localhost:1883
+# stunnel gère le mTLS vers mqtt:8883
+STUNNEL_MODE     = os.getenv("STUNNEL_MODE", "0") == "1"
+MQTT_BROKER      = "127.0.0.1" if STUNNEL_MODE else os.getenv("MQTT_BROKER", "localhost")
+MQTT_PORT        = 1883        if STUNNEL_MODE else int(os.getenv("MQTT_PORT", "8883"))
+MQTT_TOPIC_DATA  = f"iot/{DEVICE_ID}/data"
+MQTT_TOPIC_CMD   = f"iot/{DEVICE_ID}/cmd"
 
 Path(CERT_STORE_DIR).mkdir(parents=True, exist_ok=True)
 
@@ -113,13 +104,13 @@ class IoTAgent:
         self._failed_attempts: int = 0        # ← nouveau
         self._tls_connect_time: float = 0.0   # ← nouveau
 
-        log.info("Agent IoT créé — Device-ID : %s", self.device_id)
+        log.info("Agent IoT créé — Device-ID : %s | stunnel=%s", self.device_id, STUNNEL_MODE)
 
     # ------------------------------------------------------------------
     # Point d'entrée principal : suit l'organigramme
     # ------------------------------------------------------------------
 
-    def run(self) -> None:
+    def run(self, cert_only: bool = False) -> None:
         """
         Exécute la boucle principale de l'organigramme :
         Init → CSR → PKI → Cert → TLS → MQTT → données → analyse…
@@ -140,9 +131,13 @@ class IoTAgent:
                 return
 
             # ── Étapes 6-7 : Connexion TLS / validation cert ─────────────
-            tls_ok = self._step_tls_connect()
-            if not tls_ok:
-                log.error("Connexion TLS refusée. Arrêt.")
+            # Mode cert-only : écrire le signal et s'arrêter
+            if cert_only:
+                Path("/tmp/cert_ready").write_text(self._cert_path or "")
+                log.info("[CERT-ONLY] Certificat prêt → /tmp/cert_ready. Arrêt.")
+                return
+            if not self._step_tls_connect():
+                log.error("Connexion TLS refusée.")
                 self.state = AgentState.BLOCKED
                 return
 
@@ -319,70 +314,52 @@ class IoTAgent:
         log.info("[ÉTAPE 6] Tentative de connexion TLS au broker MQTT.")
         self.state = AgentState.CONNECTING
 
-        key_pem = self._get_tls_private_key_pem()
-        if key_pem is None:
-            return False
-
-        # Écriture temporaire de la clé (effacée après connexion)
-        key_path = os.path.join(CERT_STORE_DIR, f"{self.device_id}.key")
-        try:
-            with open(key_path, "wb") as f:
-                f.write(key_pem)
-            os.chmod(key_path, 0o600)
-            self._key_path = key_path
-        except OSError as exc:
-            log.error("Impossible d'écrire la clé temporaire : %s", exc)
-            return False
-
-        # Configurer le client MQTT
         client_id = f"iot-{self.device_id}"
         self.mqtt_client = mqtt.Client(
             client_id=client_id,
             protocol=mqtt.MQTTv5,
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
         )
-
-        # Callbacks
         self.mqtt_client.on_connect    = self._on_mqtt_connect
         self.mqtt_client.on_disconnect = self._on_mqtt_disconnect
         self.mqtt_client.on_message    = self._on_mqtt_message
         self.mqtt_client.on_publish    = self._on_mqtt_publish
-
-        # TLS mutuel (mTLS)
+ 
+        if STUNNEL_MODE:
+            # ── Mode stunnel : connexion en clair sur localhost:1883 ──────
+            # stunnel s'occupe du mTLS vers mqtt:8883 via PKCS#11 → SoftHSM
+            log.info("[STUNNEL] Connexion en clair sur localhost:1883")
+            log.info("[STUNNEL] mTLS géré par stunnel via PKCS#11 (clé dans SoftHSM)")
+        else:
+            # ── Mode direct : mTLS Python (clé éphémère — mode démo) ──────
+            log.warning("[MODE DIRECT] TLS Python — la clé n'est PAS dans SoftHSM")
+            key_path = os.path.join(CERT_STORE_DIR, f"{self.device_id}_private.pem")
+            if not os.path.exists(key_path):
+                log.error("Clé privée introuvable : %s", key_path)
+                return False
+            try:
+                self.mqtt_client.tls_set(
+                    ca_certs=CA_CERT_PATH,
+                    certfile=self._cert_path,
+                    keyfile=key_path,
+                    cert_reqs=ssl.CERT_REQUIRED,
+                    tls_version=ssl.PROTOCOL_TLS_CLIENT,
+                )
+                self.mqtt_client.tls_insecure_set(False)
+            except ssl.SSLError as exc:
+                log.error("[TLS] Erreur : %s", exc)
+                return False
+ 
+        _t0 = time.time()
         try:
-            self.mqtt_client.tls_set(
-                ca_certs=CA_CERT_PATH,
-                certfile=self._cert_path,
-                keyfile=self._key_path,
-                cert_reqs=ssl.CERT_REQUIRED,
-                tls_version=ssl.PROTOCOL_TLS_CLIENT,
-            )
-            self.mqtt_client.tls_insecure_set(False)
-        except ssl.SSLError as exc:
-            log.error("[REFUS TLS] Configuration SSL échouée : %s", exc)
+            self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60, clean_start=True)
+        except (ConnectionRefusedError, OSError) as exc:
+            log.error("[CONNEXION] Refusée : %s", exc)
             return False
-
-        # Tentative de connexion
-        _t0 = time.time()   # ← nouveau
-        try:
-            self.mqtt_client.connect(
-                MQTT_BROKER,
-                MQTT_PORT,
-                keepalive=60,
-                clean_start=True,
-            )
-        except ConnectionRefusedError as exc:
-            log.error("[REFUS CONNEXION] Broker a refusé : %s", exc)
-            return False
-        except OSError as exc:
-            log.error("[REFUS CONNEXION] Erreur réseau : %s", exc)
-            return False
-        self._tls_connect_time = round((time.time() - _t0) * 1000, 2)  # ← nouveau
-
-        # Démarrer la boucle MQTT en arrière-plan
+ 
+        self._tls_connect_time = round((time.time() - _t0) * 1000, 2)
         self.mqtt_client.loop_start()
-
-        # Attendre la confirmation de connexion (max 10 s)
+ 
         deadline = time.time() + 10
         while time.time() < deadline:
             if self.state == AgentState.CONNECTED:
@@ -390,41 +367,9 @@ class IoTAgent:
             if self.state == AgentState.BLOCKED:
                 return False
             time.sleep(0.2)
-
-        log.error("[TIMEOUT] Pas de réponse du broker MQTT après 10s.")
+ 
+        log.error("[TIMEOUT] Pas de réponse du broker après 10s.")
         return False
-
-    def _get_tls_private_key_pem(self) -> Optional[bytes]:
-        """
-        Retourne une représentation PEM de la clé privée utilisable par paho.
-        Dans le mode simulation SoftHSM, on doit avoir une clé extractable.
-        En production, utiliser wolfSSL ou mbedTLS avec moteur PKCS#11.
-        """
-        # Mode simulation : lire la clé depuis le répertoire de certs si disponible
-        possible_key = os.path.join(CERT_STORE_DIR, f"{self.device_id}_private.pem")
-        if os.path.exists(possible_key):
-            with open(possible_key, "rb") as f:
-                return f.read()
-
-        # Fallback : générer une clé éphémère pour la démo (à remplacer en prod)
-        log.warning(
-            "Clé privée non trouvée dans %s. "
-            "Utilisation d'une clé éphémère (DÉMO UNIQUEMENT).",
-            possible_key
-        )
-        from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
-        from cryptography.hazmat.primitives import serialization as _ser
-
-        ephemeral = _rsa.generate_private_key(
-            public_exponent=65537,
-            key_size=2048,
-            backend=default_backend()
-        )
-        return ephemeral.private_bytes(
-            encoding=_ser.Encoding.PEM,
-            format=_ser.PrivateFormat.TraditionalOpenSSL,
-            encryption_algorithm=_ser.NoEncryption()
-        )
 
     # ------------------------------------------------------------------
     # Étape 8-N — Boucle d'envoi de données + analyse comportement
@@ -473,11 +418,7 @@ class IoTAgent:
         if self.se is None:
             return "mTLS_Software"
         
-        possible_key = os.path.join(CERT_STORE_DIR, f"{self.device_id}_private.pem")
-        if os.path.exists(possible_key):
-            return "mTLS_SE"     # clé vient du Secure Element
-        else:
-            return "Challenge_SE"    # SE présent mais clé éphémère (simulation)
+        return "mTLS_SE" if STUNNEL_MODE else "Challenge_SE"    # SE présent mais clé éphémère (simulation)
 
     def _build_telemetry_payload(self) -> Dict[str, Any]:
         """Construit la charge utile de télémétrie."""
@@ -579,32 +520,22 @@ class IoTAgent:
     # ------------------------------------------------------------------
 
     def _cleanup(self) -> None:
-        log.info("Nettoyage des ressources…")
+      log.info("Nettoyage des ressources…")
 
-        if self.mqtt_client:
-            try:
-                self.mqtt_client.loop_stop()
-                self.mqtt_client.disconnect()
-            except Exception:  # pylint: disable=broad-except
-                pass
+      if self.mqtt_client:
+        try:
+          self.mqtt_client.loop_stop()
+          self.mqtt_client.disconnect()
+        except Exception:  # pylint: disable=broad-except  
+          pass
 
         # Effacement sécurisé de la clé temporaire
-        if self._key_path and os.path.exists(self._key_path):
-            try:
-                size = os.path.getsize(self._key_path)
-                with open(self._key_path, "wb") as f:
-                    f.write(os.urandom(size))
-                os.unlink(self._key_path)
-                log.info("Clé privée temporaire effacée de façon sécurisée.")
-            except OSError as exc:
-                log.warning("Impossible d'effacer la clé temporaire : %s", exc)
-
-        if self.se:
-            self.se.close()
+         if self.se:
+           self.se.close()
 
     def _handle_signal(self, signum, frame):
-        log.info("Signal %d reçu. Arrêt propre…", signum)
-        self._running = False
+      log.info("Signal %d reçu. Arrêt propre…", signum)
+      self._running = False
 
 
 # ---------------------------------------------------------------------------
@@ -612,7 +543,11 @@ class IoTAgent:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    log.info("Démarrage de l'agent IoT sécurisé — Device : %s", DEVICE_ID)
-    agent = IoTAgent()
-    agent.run()
-    log.info("Agent arrêté.")
+  parser = argparse.ArgumentParser()
+  parser.add_argument("--cert-only", action="store_true", help="Obtenir le certificat puis s'arrêter (mode stunnel init)")
+  args = parser.parse_args()
+ 
+  log.info("Démarrage agent — Device=%s stunnel=%s cert_only=%s", DEVICE_ID, STUNNEL_MODE, args.cert_only)
+  agent = IoTAgent()
+  agent.run(cert_only=args.cert_only)
+  log.info("Agent arrêté.")
