@@ -107,13 +107,7 @@ echo "[INIT] stunnel.conf généré."
 # stunnel sera lancé APRÈS que agent.py ait obtenu son certificat.
 # agent.py écrit un fichier signal quand le cert est prêt.
 # Générer la clé privée éphémère si absente
-mkdir -p /tmp/device_certs
-if [ ! -f "/tmp/device_certs/${DEVICE_ID}_private.pem" ]; then
-    echo "[INIT] Génération de la clé privée éphémère..."
-    openssl genrsa -out /tmp/device_certs/${DEVICE_ID}_private.pem 2048
-    chmod 600 /tmp/device_certs/${DEVICE_ID}_private.pem
-    echo "[INIT] Clé privée générée."
-fi
+
 
 echo "[INIT] Lancement de agent.py (obtention du certificat)..."
 
@@ -152,6 +146,21 @@ sleep 1
 
 echo "[INIT] Certificat obtenu : ${CERT_PATH}"
 
+# Attendre que agent.py ait généré la clé privée
+echo "[INIT] Attente de la clé privée..."
+TIMEOUT=60
+ELAPSED=0
+while [ ! -f "/tmp/device_certs/${DEVICE_ID}_private.pem" ] && [ $ELAPSED -lt $TIMEOUT ]; do
+    sleep 2
+    ELAPSED=$((ELAPSED + 2))
+    echo "[INIT] Attente clé privée... ${ELAPSED}s"
+done
+
+if [ ! -f "/tmp/device_certs/${DEVICE_ID}_private.pem" ]; then
+    echo "[ERREUR] Clé privée non générée après ${TIMEOUT}s. Arrêt."
+    exit 1
+fi
+echo "[INIT] Clé privée prête."
 # ── 5. Lancer stunnel en arrière-plan ────────────────────────────────────
 echo "[INIT] Démarrage stunnel (mTLS via PKCS#11)..."
 stunnel /etc/stunnel/stunnel.conf &
