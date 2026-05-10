@@ -15,12 +15,16 @@ services:
       - DOCKER_INFLUXDB_INIT_ORG=iot_org
       - DOCKER_INFLUXDB_INIT_BUCKET=iot_bucket
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=mytoken1234
+     networks:
+      - iot-net
     grafana:
      image: grafana/grafana
      container_name: grafana
      ports:
       - "3000:3000"
      restart: always
+     networks:
+      - iot-net
      volumes:
       - grafana-data:/var/lib/grafana
 
@@ -34,6 +38,8 @@ services:
       - ../pki:/mosquitto/certs:ro
       - ../pki:/etc/mosquitto/certs:ro
      restart: unless-stopped
+     networks:
+      - iot-net
     
     backend:
      build:
@@ -55,6 +61,8 @@ services:
       - DB_PATH=/app/backend/logs.db
      volumes:
       - backend-db:/app/backend
+     networks:
+      - iot-net
      healthcheck:                    # 2. healthcheck après environment
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('https://localhost:8443/api/v1/health', context=__import__('ssl')._create_unverified_context())"]
       interval: 10s
@@ -80,11 +88,19 @@ services:
      environment:
       - DEVICE_ID=iot-device-001    # fixe et unique
       - PKI_URL=https://backend:8443
-      - MQTT_BROKER=mqtt
+      - MQTT_BROKER=127.0.0.1
+      - MQTT_PORT=11883
       - CA_CERT=/app/pki/ca.crt
+      - CERT_STORE_DIR=/tmp/device_certs
       - VERIFY_TLS_BACKEND=false
       - STUNNEL_MODE=1
+      - SE_TOKEN_LABEL=iot-token
+      - SE_USER_PIN=1234
+      - SE_KEY_LABEL=iot-device-key
+      - PKCS11_LIB=/usr/lib/softhsm/libsofthsm2.so
      restart: unless-stopped
+     networks:
+      - iot-net
        
     iot-agent-2:
      volumes:
@@ -100,10 +116,18 @@ services:
      environment:
       - DEVICE_ID=iot-device-002    # fixe et unique
       - PKI_URL=https://backend:8443
-      - MQTT_BROKER=mqtt
+      - MQTT_BROKER=127.0.0.1
+      - MQTT_PORT=11883
       - CA_CERT=/app/pki/ca.crt
+      - CERT_STORE_DIR=/tmp/device_certs
       - VERIFY_TLS_BACKEND=false
       - STUNNEL_MODE=1
+      - SE_TOKEN_LABEL=iot-token
+      - SE_USER_PIN=1234
+      - SE_KEY_LABEL=iot-device-key
+      - PKCS11_LIB=/usr/lib/softhsm/libsofthsm2.so
+     networks:
+      - iot-net
 
     iot-agent-3:
      volumes:
@@ -119,11 +143,21 @@ services:
      environment:
       - DEVICE_ID=iot-device-003    # fixe et unique
       - PKI_URL=https://backend:8443
-      - MQTT_BROKER=mqtt
+      - MQTT_BROKER=127.0.0.1
+      - MQTT_PORT=11883
       - CA_CERT=/app/pki/ca.crt
+      - CERT_STORE_DIR=/tmp/device_certs
       - VERIFY_TLS_BACKEND=false
       - STUNNEL_MODE=1
-
+      - SE_TOKEN_LABEL=iot-token
+      - SE_USER_PIN=1234
+      - SE_KEY_LABEL=iot-device-key
+      - PKCS11_LIB=/usr/lib/softhsm/libsofthsm2.so
+     networks:
+      - iot-net
+networks:
+  iot-net:
+    driver: bridge
 volumes:
     influxdb-data:
     grafana-data:
