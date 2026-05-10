@@ -82,9 +82,12 @@ services:
       - MQTT_BROKER=mqtt
       - CA_CERT=/app/pki/ca.crt
       - VERIFY_TLS_BACKEND=false
+      - STUNNEL_MODE=1
      restart: unless-stopped
        
     iot-agent-2:
+     volumes:
+      - /var/lib/softhsm/tokens:/var/lib/softhsm/tokens
      build:
       context: ..
       dockerfile: docker/Dockerfile.iot
@@ -98,8 +101,12 @@ services:
       - PKI_URL=https://backend:8443
       - MQTT_BROKER=mqtt
       - CA_CERT=/app/pki/ca.crt
+      - VERIFY_TLS_BACKEND=false
+      - STUNNEL_MODE=1
 
     iot-agent-3:
+     volumes:
+      - /var/lib/softhsm/tokens:/var/lib/softhsm/tokens
      build:
       context: ..
       dockerfile: docker/Dockerfile.iot
@@ -113,6 +120,8 @@ services:
       - PKI_URL=https://backend:8443
       - MQTT_BROKER=mqtt
       - CA_CERT=/app/pki/ca.crt
+      - VERIFY_TLS_BACKEND=false
+      - STUNNEL_MODE=1
 
 volumes:
     influxdb-data:
