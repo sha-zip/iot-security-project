@@ -1,25 +1,76 @@
-# Dockerfile.iot
-FROM python:3.12-slim
-
-WORKDIR /app
-RUN apt-get update && apt-get install -y softhsm2 libsofthsm2 stunnel4 opensc openssl libengine-pkcs11-openssl p11-kit && rm -rf /var/lib/apt/lists/*
-
-
-
-#Instqller les dependqnces
-COPY devices/iot_agent/requirements.txt /app/requirements.txt
-COPY devices/secure_element/requirements.txt /app/se_requirements.txt
-RUN pip install --no-cache-dir --timeout=120 -r /app/requirements.txt -r /app/se_requirements.txt
-
-#Copier le code de l'agent IoT
-COPY devices/iot_agent/ /app/
-COPY devices/secure_element/se_module.py /app/se_module.py
-#Copier les certificaat PKI necessaires
-COPY pki/ /app/pki/
-COPY docker/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
-RUN mkdir -p /etc/stunnel
-
+# docker/Dockerfile.iot
+# Agent IoT avec stunnel + SoftHSM2 intégrés
+# stunnel tourne dans ce même container via entrypoint.sh
+# (pas de container stunnel séparé)
  
-ENTRYPOINT ["/app/entrypoint.sh"]
-
+FROM python:3.12-slim
+ 
+WORKDIR /app
+ 
+# ── Dépendances système ───────────────────────────────────────
+RUN apt-get update && apt-get install -y \
+    # Build tools pour stunnel
+    build-essential \
+    libssl-dev \
+    pkg-config \
+    wget \
+    # SoftHSM2 + PKCS#11
+    softhsm2 \
+    libsofthsm2 \
+    opensc \
+    # Utilitaires
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+ 
+# ── Compiler stunnel depuis les sources ───────────────────────
+# Garantit Compiled == Running (même OpenSSL que le système)
+RUN wget -q https://www.stunnel.org/downloads/stunnel-latest.tar.gz \
+    && tar xzf stunnel-latest.tar.gz \
+    && cd stunnel-5.78 \
+    && ./configure \
+    && make -j$(nproc) \
+    && make install \
+    && cd .. \
+    && rm -rf stunnel-5.78 stunnel-latest.tar.gz
+ 
+# Vérification : pas de mismatch OpenSSL
+RUN stunnel -version 2>&1 | grep -E "Compiled|Running"
+ 
+# ── Purger les outils de build (image plus légère) ────────────
+RUN apt-get purge -y build-essential wget \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+ 
+# ── Dépendances Python ────────────────────────────────────────
+COPY devices/iot_agent/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+ 
+# ── Dépendances Python du Secure Element ─────────────────────
+COPY devices/secure_element/requirements.txt /tmp/se_requirements.txt
+RUN pip install --no-cache-dir -r /tmp/se_requirements.txt
+ 
+# ── Code de l'application ─────────────────────────────────────
+COPY devices/iot_agent/ /app/
+COPY devices/secure_element/ /app/
+ 
+# ── Certificats PKI (CA uniquement — le cert device vient de la PKI) ──
+COPY pki/ca.crt /app/pki/ca.crt
+ 
+# ── Répertoires runtime ───────────────────────────────────────
+RUN mkdir -p /tmp/device_certs \
+             /var/lib/softhsm/tokens \
+             /etc/stunnel \
+             /var/log/stunnel \
+    && chmod 700 /tmp/device_certs
+ 
+# ── Configuration SoftHSM2 ────────────────────────────────────
+RUN mkdir -p /etc/softhsm2 \
+    && echo "directories.tokendir = /var/lib/softhsm/tokens/" > /etc/softhsm2/softhsm2.conf \
+    && echo "objectstore.backend = file" >> /etc/softhsm2/softhsm2.conf \
+    && echo "log.level = INFO" >> /etc/softhsm2/softhsm2.conf
+ 
+# ── Point d'entrée ────────────────────────────────────────────
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ 
+ENTRYPOINT ["/entrypoint.sh"]
