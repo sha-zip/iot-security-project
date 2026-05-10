@@ -525,11 +525,32 @@ class IoTAgent:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--cert-only", action="store_true", help="Obtenir le certificat puis s'arrêter (mode stunnel init)")
-    args = parser.parse_args()
+     agent = IoTAgent()
  
-    log.info("Démarrage agent — Device=%s stunnel=%s cert_only=%s", DEVICE_ID, STUNNEL_MODE, args.cert_only)
-    agent = IoTAgent()
-    agent.run(cert_only=args.cert_only)
+     # ── Mode enrôlement uniquement (appelé par entrypoint.sh) ──
+     # Quand CERT_ONLY_MODE=1, l'agent s'arrête après avoir obtenu
+     # le certificat et écrit /tmp/cert_ready comme signal.
+     if os.getenv("CERT_ONLY_MODE") == "1":
+     log.info("[CERT-ONLY] Mode enrôlement — obtention du certificat uniquement.")
+     try:
+     agent._step_init()
+     ok = agent._step_csr_lifecycle()
+     if ok:
+      # Écrire le fichier signal pour entrypoint.sh
+      with open("/tmp/cert_ready", "w") as f:
+       f.write("ok")
+       log.info("[CERT-ONLY] Certificat obtenu. Signal écrit → /tmp/cert_ready")
+      else:
+       log.error("[CERT-ONLY] Impossible d'obtenir le certificat.")
+       sys.exit(1)
+    except Exception as exc:
+     log.exception("[CERT-ONLY] Erreur fatale : %s", exc)
+     sys.exit(1)
+    finally:
+     if agent.se:
+      agent.se.close()
+    sys.exit(0)
+ 
+    # ── Mode normal : flux complet de l'organigramme ───────────
+    agent.run()
     log.info("Agent arrêté.")
