@@ -86,9 +86,6 @@ foreground = yes
 debug = 4
 pid = /tmp/stunnel.pid
 
-engine = pkcs11
-engineCtrl = MODULE_PATH:${PKCS11_LIB}
-engineCtrl = PIN:${USER_PIN}
 
 [mqtts-client]
 client  = yes
@@ -96,7 +93,7 @@ accept  = 127.0.0.1:1883
 connect = ${MQTT_BROKER}:${MQTT_PORT}
 
 cert   = ${CERT_PATH}
-key    = pkcs11:token=${TOKEN_LABEL};object=${KEY_LABEL};type=private
+key    = /tmp/device_certs/${DEVICE_ID}_private.pem
 CAfile = ${CA_CERT}
 verify = 2
 
