@@ -95,9 +95,9 @@ services:
       - CERT_STORE_DIR=/tmp/device_certs
       - VERIFY_TLS_BACKEND=false
       - STUNNEL_MODE=1
-      - SE_TOKEN_LABEL=iot-token
+      - SE_TOKEN_LABEL=iot-token-001
       - SE_USER_PIN=1234
-      - SE_KEY_LABEL=iot-device-key
+      - SE_KEY_LABEL=iot-device-key-001
       - PKCS11_LIB=/usr/lib/softhsm/libsofthsm2.so
       - SEND_INTERVAL=5.0
      restart: unless-stopped
@@ -125,9 +125,9 @@ services:
       - CERT_STORE_DIR=/tmp/device_certs
       - VERIFY_TLS_BACKEND=false
       - STUNNEL_MODE=1
-      - SE_TOKEN_LABEL=iot-token
+      - SE_TOKEN_LABEL=iot-token-002
       - SE_USER_PIN=1234
-      - SE_KEY_LABEL=iot-device-key
+      - SE_KEY_LABEL=iot-device-key-002
       - PKCS11_LIB=/usr/lib/softhsm/libsofthsm2.so
       - SEND_INTERVAL=5.0
      networks:
@@ -154,9 +154,9 @@ services:
       - CERT_STORE_DIR=/tmp/device_certs
       - VERIFY_TLS_BACKEND=false
       - STUNNEL_MODE=1
-      - SE_TOKEN_LABEL=iot-token
+      - SE_TOKEN_LABEL=iot-token-003
       - SE_USER_PIN=1234
-      - SE_KEY_LABEL=iot-device-key
+      - SE_KEY_LABEL=iot-device-key-003
       - PKCS11_LIB=/usr/lib/softhsm/libsofthsm2.so
       - SEND_INTERVAL=5.0
      networks:
