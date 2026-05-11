@@ -226,20 +226,24 @@ class SecureElement:
         csr_asn1, _ = decoder.decode(temp_csr_der, asn1Spec=rfc2314.CertificationRequest())
         #Replace public key info with real pkcs11 public key
         from pyasn1.codec.der import decoder as der_decoder
-        pub_key_info, _ = der_decoder.decode(pub_der)
+        pub_key_info, _ = der_decoder.decode(pub_der; asn1Spec=SubjectPublicKeyInfo())
         csr_asn1['certificationRequestInfo']['subjectPublicKeyInfo'] = pub_key_info
         #Replace signature
+        real_sig_bytes = bytes(real_signature)
         csr_asn1['signature'] = univ.BitString(hexValue=real_signature.hex())
         #Re encode
         new_der = encoder.encode(csr_asn1)
-        b64 = base64.b64encode(new_der).decode()
-        pem_lines = [b64[i:i+64] for i in range(0, len(b64), 64)]
-        csr_pem = "-------BEGIN CERTIFICATION REQUEST------\n"
-        csr_pem += "\n".join(pem_lines)
-        csr_pem += "\n---------END CERTIFICATION REQUEST------\n"
+        import base64
+        b64 = base64.b64encode(new_der).decode("ascii")
+        pem_lines = "\n".join(b64[i:i+64] for i in range(0, len(b64), 64))
+        csr_pem = (
+            "-----BEGIN CERTIFICATION REQUEST-----\n"
+             + pem_lines + "\n"
+             +"------END CERTIFICATION REQUEST-----\n"
+        )
         log.info("[SE] CSR signe avec cle pkcs11 reelle")
         self._fallback_private_key = None #mark as usiing real se
-        return csr_pem.encode()
+        return csr_pem.encode("ascii")
 
     def _generate_csr_ephemeral(
         self, device_id: str, organization: str
