@@ -218,15 +218,15 @@ class SecureElement:
         )
         # rebuild csr aith real public key+ real signature using pysan1
         from pyasn1.type import univ, namedtype
-        from pyasn1_modules import rfc2314, pem
+        from pyasn1_modules import rfc1234, pem
+        from pyasn1_modules.rfc2459 import SubjectPublicKeyInfo as ASN1SubjectPublicKeyInfo
         from pyasn1.codec.der import decoder, encoder
         import base64
         # Decode the temp csr structure
         temp_csr_der = temp_csr.public_bytes(serialization.Encoding.DER)
         csr_asn1, _ = decoder.decode(temp_csr_der, asn1Spec=rfc2314.CertificationRequest())
         #Replace public key info with real pkcs11 public key
-        from pyasn1.codec.der import decoder as der_decoder
-        pub_key_info, _ = der_decoder.decode(pub_der; asn1Spec=SubjectPublicKeyInfo())
+        pub_key_info, _ = decoder.decode(pub_der, asn1Spec=ASN1SubjectPublicKeyInfo())
         csr_asn1['certificationRequestInfo']['subjectPublicKeyInfo'] = pub_key_info
         #Replace signature
         real_sig_bytes = bytes(real_signature)
