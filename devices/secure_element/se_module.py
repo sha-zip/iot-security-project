@@ -177,15 +177,27 @@ class SecureElement:
     ) -> bytes:
         """
         Construit un CSR en utilisant la clé dans SoftHSM pour signer.
+        builds a csr manually m signing the tbs with the pkcs11 key directly.
+        Bypass cryptography type check on private keys.
         """
+        import hashlib
+        from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
         from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
+        from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.x509 import CertificateSigningRequestBuilder
 
         # Clé publique exportée depuis le token
         pub_der = self._export_public_key_der()
         pub_key = serialization.load_der_public_key(pub_der, backend=default_backend())
 
-        # Construire le CSR sans signer d'abord
+        #generate ephemeral key ONLY to build the tbs structure
+        #then replace the signature with the pkcs11 one
+        temp_key = _rsa.generate_private_key(
+          public_exponent=65537,
+          key_size=KEY_SIZE,
+          backend=default_backend(),
+        )
+        # build and sign with temp key first to get to the tbs bytes
         builder = (
             x509.CertificateSigningRequestBuilder()
             .subject_name(
@@ -197,16 +209,37 @@ class SecureElement:
             )
         )
 
-        # _PKCS11PrivateKeyAdapter (défini au niveau module) est utilisé
-        # pour que cryptography puisse signer via python-pkcs11.
-        csr = builder.sign(
-            private_key=_PKCS11PrivateKeyAdapter(
-                self._private_key, pub_key
-            ),
-            algorithm=hashes.SHA256(),
-            backend=default_backend(),
+        temp_csr = builder.sign(temp_key, hashes.SHA256(), default_backend())
+        tbs_bytes = temp_csr.tbs_certrequest_bytes
+        #sign TBS with the REAL pkcs11 key
+        real_signature = self._private_key.sign(
+          tbs_bytes,
+          mechanism=Mechanism.SHA256_RSA_PKCS
         )
-        return csr.public_bytes(serialization.Encoding.PEM)
+        # rebuild csr aith real public key+ real signature using pysan1
+        from pyasn1.type import univ, namedtype
+        from pyasn1_modules import rfc2314, pem
+        from pyasn1.codec.der import decoder, encoder
+        import base64
+        # Decode the temp csr structure
+        temp_csr_der = temp_csr.public_bytes(serialization.Encoding.DER)
+        csr_asn1, _ = decoder.decode(temp_csr_der, asn1Spec=rfc2314.CertificationRequest())
+        #Replace public key info with real pkcs11 public key
+        from pyasn1.codec.der import decoder as der_decoder
+        pub_key_info, _ = der_decoder.decode(pub_der)
+        csr_asn1['certificationRequestInfo']['subjectPublicKeyInfo'] = pub_key_info
+        #Replace signature
+        csr_asn1['signature'] = univ.BitString(hexValue=real_signature.hex())
+        #Re encode
+        new_der = encoder.encode(csr_asn1)
+        b64 = base64.b64encode(new_der).decode()
+        pem_lines = [b64[i:i+64] for i in range(0, len(b64), 64)]
+        csr_pem = "-------BEGIN CERTIFICATION REQUEST------\n"
+        csr_pem += "\n".join(pem_lines)
+        csr_pem += "\n---------END CERTIFICATION REQUEST------\n"
+        log.info("[SE] CSR signe avec cle pkcs11 reelle")
+        self._fallback_private_key = None #mark as usiing real se
+        return csr_pem.encode()
 
     def _generate_csr_ephemeral(
         self, device_id: str, organization: str
@@ -307,7 +340,10 @@ class SecureElement:
         """Retourne l'empreinte SHA-256 de la clé publique."""
         pub_pem = self.get_public_key_pem()
         return hashlib.sha256(pub_pem).hexdigest()
-
+    @property
+    def is_using_real_se(self) -> bool:
+     """Returns true only if using real pkcs11 key m not ephe;eral fallback"""
+     return self._fallback_private_key is None
     # ------------------------------------------------------------------
     # Méthodes internes
     # ------------------------------------------------------------------
@@ -429,7 +465,6 @@ class _PKCS11PrivateKeyAdapter:
     @property
     def key_size(self) -> int:
         return KEY_SIZE
-
 
 # ---------------------------------------------------------------------------
 # Utilitaire standalone : génération CSR via openssl -engine pkcs11

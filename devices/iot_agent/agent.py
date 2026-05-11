@@ -7,7 +7,7 @@ STUNNEL_MODE absent → connexion localhost:1883 (stunnel gère le mTLS)
 Architecture :
   agent.py → localhost:1883 (loopback) → stunnel → mqtt:8883 (mTLS+PKCS#11)
 """
-
+import socket
 import os
 import sys
 import ssl
@@ -62,7 +62,7 @@ VERIFY_TLS_BACKEND = os.getenv("VERIFY_TLS_BACKEND", "true").lower() == "true"
 # stunnel gère le mTLS vers mqtt:8883
 STUNNEL_MODE     = os.getenv("STUNNEL_MODE", "0") == "1"
 MQTT_BROKER      = "127.0.0.1" if STUNNEL_MODE else os.getenv("MQTT_BROKER", "localhost")
-MQTT_PORT        = 1883        if STUNNEL_MODE else int(os.getenv("MQTT_PORT", "8883"))
+MQTT_PORT        = int(os.getenv("MQTT_PORT", "11883"))        if STUNNEL_MODE else int(os.getenv("MQTT_PORT", "8883"))
 MQTT_TOPIC_DATA  = f"iot/{DEVICE_ID}/data"
 MQTT_TOPIC_CMD   = f"iot/{DEVICE_ID}/cmd"
 
@@ -241,10 +241,15 @@ class IoTAgent:
        "fingerprint": self.se.get_device_fingerprint(),
       }
      try:
+      #fixed tls verify logic
+      verify_value = False
+      if os.getenv("VERIFY_TLS_BACKEND", "false").lower() != "false":
+       verify_value = os.getenv("CA_CERT", "/app/pki/ca.crt")
+      print (f"[SE] DEBUG - PKI REAUEST -> verify={verify_value} | URL={endpoint}")
       resp = requests.post(
        endpoint,
        json=payload,
-       verify=CA_CERT_PATH if VERIFY_TLS_BACKEND else False,
+       verify=verify_value,
        timeout=30,
       )
       resp.raise_for_status()
@@ -322,7 +327,9 @@ class IoTAgent:
      if STUNNEL_MODE:
       # ── Mode stunnel : connexion en clair sur localhost:1883 ──────
       # stunnel s'occupe du mTLS vers mqtt:8883 via PKCS#11 → SoftHSM
-      log.info("[STUNNEL] Connexion en clair sur localhost:1883")
+      log.info("[STUNNEL] Connexion en clair sur 127.0.0.1:1883")
+      broker_addr = "127.0.0.1"
+      broker_port = MQTT_PORT
       log.info("[STUNNEL] mTLS géré par stunnel via PKCS#11 (clé dans SoftHSM)")
      else:
       # ── Mode direct : mTLS Python (clé éphémère — mode démo) ──────
@@ -343,10 +350,13 @@ class IoTAgent:
       except ssl.SSLError as exc:
        log.error("[TLS] Erreur : %s", exc)
        return False
+      broker_addr = MQTT_BROKER
+      broker_port = MQTT_PORT
 
+     log.info("[MQTT] Connexion a %s:%d", broker_addr, broker_port)
      _t0 = time.time()
      try:
-      self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60, clean_start=True)
+      self.mqtt_client.connect(broker_addr, broker_port, keepalive=60, clean_start=True)
      except (ConnectionRefusedError, OSError) as exc:
       log.error("[CONNEXION] Refusée : %s", exc)
       return False
@@ -357,8 +367,10 @@ class IoTAgent:
      deadline = time.time() + 10
      while time.time() < deadline:
       if self.state == AgentState.CONNECTED:
+       log.info("[OK] connecte au broker mqtt")
        return True
       if self.state == AgentState.BLOCKED:
+       log.inf("[BLOCKED] connexion refusee pqr le brocker")
        return False
       time.sleep(0.2)
  
@@ -415,7 +427,7 @@ class IoTAgent:
        "auth": {
          "auth_result":         "Success" if self.state == AgentState.CONNECTED else "Failure",
          "auth_method":         self._get_auth_method(),
-         "secure_element_used": self.se is not None,
+         "secure_element_used": self.se.is_using_real_se if self.se else False,
          "tls_latency_ms":      self._tls_connect_time,
          "failed_attempts_24h": self._failed_attempts,
         }
@@ -442,9 +454,9 @@ class IoTAgent:
       self._failed_attempts += 1   # ← nouveau
       self.state = AgentState.BLOCKED
 
-    def _on_mqtt_disconnect(self, client, userdata, rc, properties=None):
+    def _on_mqtt_disconnect(self, client, userdata,disconnect_flags, rc, properties=None):
      if rc != 0:
-      log.warning("Déconnexion inattendue du broker (rc=%d).", rc)
+      log.warning("Déconnexion inattendue du broker (rc=%s).", rc)
       if self._running and self.state not in (AgentState.BLOCKED, AgentState.ERROR):
        self.state = AgentState.CONNECTING
        log.info("Tentative de reconnexion dans 5s…")
@@ -525,32 +537,31 @@ class IoTAgent:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-     agent = IoTAgent()
- 
-     # ── Mode enrôlement uniquement (appelé par entrypoint.sh) ──
-     # Quand CERT_ONLY_MODE=1, l'agent s'arrête après avoir obtenu
-     # le certificat et écrit /tmp/cert_ready comme signal.
-     if os.getenv("CERT_ONLY_MODE") == "1":
+    agent = IoTAgent()
+    # ── Mode enrôlement uniquement (appelé par entrypoint.sh) ──
+    # Quand CERT_ONLY_MODE=1, l'agent s'arrête après avoir obtenu
+    # le certificat et écrit /tmp/cert_ready comme signal.
+    if os.getenv("CERT_ONLY_MODE") == "1":
      log.info("[CERT-ONLY] Mode enrôlement — obtention du certificat uniquement.")
      try:
-     agent._step_init()
-     ok = agent._step_csr_lifecycle()
-     if ok:
-      # Écrire le fichier signal pour entrypoint.sh
-      with open("/tmp/cert_ready", "w") as f:
-       f.write("ok")
+      agent._step_init()
+      ok = agent._step_csr_lifecycle()
+      if ok:
+       # Écrire le fichier signal pour entrypoint.sh
+       with open("/tmp/cert_ready", "w") as f:
+        f.write("ok")
        log.info("[CERT-ONLY] Certificat obtenu. Signal écrit → /tmp/cert_ready")
       else:
        log.error("[CERT-ONLY] Impossible d'obtenir le certificat.")
        sys.exit(1)
-    except Exception as exc:
-     log.exception("[CERT-ONLY] Erreur fatale : %s", exc)
-     sys.exit(1)
-    finally:
-     if agent.se:
-      agent.se.close()
-    sys.exit(0)
- 
+     except Exception as exc:
+      log.exception("[CERT-ONLY] Erreur fatale : %s", exc)
+      sys.exit(1)
+     finally:
+      if agent.se:
+       agent.se.close()
+     sys.exit(0)
+
     # ── Mode normal : flux complet de l'organigramme ───────────
     agent.run()
     log.info("Agent arrêté.")
