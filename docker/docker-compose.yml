@@ -76,7 +76,7 @@ services:
 
     iot-agent-1:
      volumes:
-      - ./pki:/app/pki:ro
+      - ../pki:/app/pki:ro
       - /var/lib/softhsm/tokens:/var/lib/softhsm/tokens
      build:
       context: ..
@@ -90,7 +90,7 @@ services:
       - DEVICE_ID=iot-device-001    # fixe et unique
       - PKI_URL=https://backend:8443
       - MQTT_BROKER=127.0.0.1
-      - MQTT_PORT=8883
+      - MQTT_PORT=11883
       - CA_CERT=/app/pki/ca.crt
       - CERT_STORE_DIR=/tmp/device_certs
       - VERIFY_TLS_BACKEND=false
@@ -106,7 +106,7 @@ services:
        
     iot-agent-2:
      volumes:
-      - ./pki:/app/pki:ro
+      - ../pki:/app/pki:ro
       - /var/lib/softhsm/tokens:/var/lib/softhsm/tokens
      build:
       context: ..
@@ -120,7 +120,7 @@ services:
       - DEVICE_ID=iot-device-002    # fixe et unique
       - PKI_URL=https://backend:8443
       - MQTT_BROKER=127.0.0.1
-      - MQTT_PORT=8883
+      - MQTT_PORT=11883
       - CA_CERT=/app/pki/ca.crt
       - CERT_STORE_DIR=/tmp/device_certs
       - VERIFY_TLS_BACKEND=false
@@ -135,7 +135,7 @@ services:
 
     iot-agent-3:
      volumes:
-      - ./pki:/app/pki:ro
+      - ../pki:/app/pki:ro
       - /var/lib/softhsm/tokens:/var/lib/softhsm/tokens
      build:
       context: ..
@@ -149,7 +149,7 @@ services:
       - DEVICE_ID=iot-device-003    # fixe et unique
       - PKI_URL=https://backend:8443
       - MQTT_BROKER=127.0.0.1
-      - MQTT_PORT=8883
+      - MQTT_PORT=11883
       - CA_CERT=/app/pki/ca.crt
       - CERT_STORE_DIR=/tmp/device_certs
       - VERIFY_TLS_BACKEND=false

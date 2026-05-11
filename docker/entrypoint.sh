@@ -161,9 +161,6 @@ if [ ! -f "${CA_CERT}" ]; then
 fi
 
 echo "[OK] Tous les certificats sont présents"
-chmod 644 "${CERT_PATH}"
-chmod 600 "${KEY_PATH}"
-chmod 644 "${CA_CERT}"
 
 # ── 5. Générer stunnel.conf ───────────────────────────────────────────────
 echo "[INIT] Génération de stunnel.conf..."
@@ -183,12 +180,12 @@ options = NO_TLSv1_1
 [mqtts-client]
 client      = yes
 accept      = 127.0.0.1:11883
-connect     = MQTT_BROKER:MQTT_PORT
+connect     = mqtt:8883
 cert        = CERT_PATH
 key         = KEY_PATH
 CAfile      = CA_CERT_FILE
 verify      = 2
-checkHost   = MQTT_BROKER
+checkHost   = mqtt
 sslVersion  = TLSv1.2
 TIMEOUTclose = 5
 sessionResume = no
