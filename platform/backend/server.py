@@ -491,7 +491,7 @@ def _extract_auth_row(data: Dict[str, Any]) -> Dict[str, Any]:
      "failed_attempts_24h": auth.get("failed_attempts_24h", 0),
      "latency_ms":          auth.get("tls_latency_ms", 0.0),
      "auth_result":         auth.get("auth_result", "Failure"),
-     "secure_element_used": str(auth.get("secure_element_used", False)),
+     "secure_element_used": "True" if auth.get("secure_element_used", False) else "False",
      "auth_method":         auth.get("auth_method", "mTLS_Software"),
      "attack_type":         "None",
     }
