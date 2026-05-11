@@ -510,25 +510,13 @@ def _run_ai_pipeline(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
  
     try:
      auth_row = _extract_auth_row(data)
-
+     import pandas as pd
      features_list = extract_features(auth_row)
      row = dict(zip(FEATURE_NAMES, features_list))
 
-     import numpy as np
-     import pandas as pd
-     # 1. Features (list → dict pour risk_scoring et xai)
-     features_list = extract_features(data)
-     feature_names = [
-      "failed_attempts_24h",
-      "latency_ms",
-      "auth_result",
-      "secure_element",
-      "auth_method",
-     ]
-     row = dict(zip(feature_names, features_list))
- 
+
         # 2. Prédiction attaque + confiance
-     X = pd.DataFrame([features_list], columns=feature_names)
+     X = pd.DataFrame([features_list], columns=FEATURE_NAMES)
      predictions = _attack_model.predict_with_confidence(X)
      predicted_attack, confidence = predictions[0]
  
