@@ -34,8 +34,8 @@ def extract_features(row):
 
     # --- secure element used: 1 = True, 0 = False ---
     # BUG FIX: compare to lowercase "true"
-    se_raw = str(row.get("secure_element_used", "")).strip().lower()
-    secure_element = 1 if se_raw == "true" else 0
+    se_val = row.get("secure_element_used", False)
+    secure_element = 1 if str(se_val).strip().lower() in ("true", "1", "yes") else 0
 
     # --- auth method encoded as integer ---
     auth_method_map = {
