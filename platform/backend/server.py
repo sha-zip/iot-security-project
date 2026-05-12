@@ -513,6 +513,9 @@ def _run_ai_pipeline(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
      import pandas as pd
      features_list = extract_features(auth_row)
      row = dict(zip(FEATURE_NAMES, features_list))
+     log.info("[DEBUG] auth_row=%s", auth_row)
+     log.info("[DEBUG] features_list=%s", features_list)
+     log.info("[DEBUG] row=%s", row)
 
 
         # 2. Prédiction attaque + confiance
@@ -524,6 +527,7 @@ def _run_ai_pipeline(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
      risk = compute_risk(row, predicted_attack)
  
         # 4. XAI + niveau
+     log.info("[DEBUG] predicted_attack=%s confidence=%s risk=%s", predicted_attack, confidence, risk)
      level, reasons = explain(row, predicted_attack, confidence, risk)
  
         # 5. Décision

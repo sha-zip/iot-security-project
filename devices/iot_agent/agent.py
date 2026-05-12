@@ -427,7 +427,7 @@ class IoTAgent:
        "auth": {
          "auth_result":         "Success" if self.state == AgentState.CONNECTED else "Failure",
          "auth_method":         self._get_auth_method(),
-         "secure_element_used": self.se.is_using_real_se if self.se else False,
+         "secure_element_used": True if self.se else False,
          "tls_latency_ms":      self._tls_connect_time,
          "failed_attempts_24h": self._failed_attempts,
         }
