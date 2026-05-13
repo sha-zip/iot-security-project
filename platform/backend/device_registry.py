@@ -72,6 +72,7 @@ class DeviceRegistry:
         fingerprint: str,
         certificate_pem: Optional[str] = None,
         metadata: Optional[Dict] = None,
+        initial_status: str = DeviceStatus.ACTIVE,
     ) -> None:
         """Enregistre ou met à jour un device."""
         import json as _json
@@ -88,11 +89,11 @@ class DeviceRegistry:
                     certificate_pem = excluded.certificate_pem,
                     status          = CASE
                                         WHEN status = 'blocked' THEN 'blocked'
-                                        ELSE 'active'
+                                        ELSE excluded.status
                                       END,
                     metadata        = excluded.metadata
             """, (device_id, fingerprint, certificate_pem,
-                  DeviceStatus.ACTIVE, now, meta_str))
+                  initial_status, now, meta_str))
         log.info("[REGISTRE] Device enregistré/mis à jour : %s", device_id)
 
     def get_device(self, device_id: str) -> Optional[Dict[str, Any]]:
