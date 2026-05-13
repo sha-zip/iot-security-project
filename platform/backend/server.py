@@ -153,7 +153,7 @@ def require_api_key(f):
     def decorated(*args, **kwargs):
         key = request.headers.get("X-API-Key", "")
         if key != API_KEY:
-            audit.log_event("auth_failure", {"endpoint": request.path, "ip": request.remote_addr})
+            _audit("auth_failure", {"endpoint": request.path, "ip": request.remote_addr})
             abort(401, "Clé API invalide.")
         return f(*args, **kwargs)
     return decorated
@@ -256,7 +256,7 @@ def receive_data():
     device = registry.get_device(device_id)
     if not device:
         log.warning("[UNAUTHORIZED] Device inconnu : %s", device_id)
-        audit.log_event("unknown_device", {"device_id": device_id})
+        _audit("unknown_device", {"device_id": device_id})
         return jsonify({"action": "reject", "reason": "device inconnu"}), 403
 
     if device["status"] == DeviceStatus.BLOCKED:
@@ -332,7 +332,7 @@ def add_device():
         certificate_pem=None,
     )
 
-    audit.log_event("device_added_manually", {"device_id": device_id})
+    _audit("device_added_manually", {"device_id": device_id})
 
     return jsonify({
         "status":    "added",
@@ -373,7 +373,7 @@ def delete_device_route(device_id: str):
     if not deleted:
         return jsonify({"error": "suppression échouée"}), 500
 
-    audit.log_event("device_deleted", {"device_id": device_id, "admin": True})
+    _audit("device_deleted", {"device_id": device_id, "admin": True})
 
     return jsonify({
         "status":    "deleted",
