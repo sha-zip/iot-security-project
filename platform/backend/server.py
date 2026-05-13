@@ -160,6 +160,33 @@ def require_api_key(f):
 
 
 # ---------------------------------------------------------------------------
+# Vérification + révocation device inconnu ou bloqué
+# ---------------------------------------------------------------------------
+def _check_and_revoke(device_id: str) -> Optional[str]:
+    """
+    Vérifie si le device est autorisé.
+    - Device inconnu  → révocation préventive du certificat
+    - Device bloqué   → révocation du certificat
+    Retourne une raison de rejet (str) ou None si le device est autorisé.
+    """
+    device = registry.get_device(device_id)
+ 
+    if not device:
+        log.warning("[UNKNOWN] Device inconnu, révocation préventive : %s", device_id)
+        _revoke_certificate(device_id)
+        _audit("unknown_device_revoked", {"device_id": device_id})
+        return "device inconnu"
+ 
+    if device["status"] == DeviceStatus.BLOCKED:
+        log.warning("[BLOCKED] Device bloqué, révocation du certificat : %s", device_id)
+        _revoke_certificate(device_id)
+        _audit("blocked_device_revoked", {"device_id": device_id})
+        if INFLUX_AVAILABLE:
+            write_device_status(device_id, "blocked")
+        return "device bloqué"
+ 
+    return None
+# ---------------------------------------------------------------------------
 # ── Étape 3 / 4 : Enrôlement du device (validation CSR + signature cert)
 # ---------------------------------------------------------------------------
 
@@ -226,75 +253,6 @@ def enroll_device():
         "certificate": cert_pem,
     })
 
-# ---------------------------------------------------------------------------
-# ── Étape 8-N : Réception des données + pipeline IA
-# ---------------------------------------------------------------------------
-
-@app.route("/api/v1/data", methods=["POST"])
-def receive_data():
-    """
-    POST /api/v1/data
-    Body JSON : { "device_id": str, "timestamp": float, ... telemetry ... }
-
-    Implémente les étapes de l'organigramme :
-      « Le comportement est-il normal ? »
-        Oui → Autorisation maintenue
-        Non → Détection d'anomalies (IA) → Calcul score de risque
-               → « Le risque est-il élevé ? »
-                    Oui → Blocage du dispositif
-                    Non → Surveillance renforcée
-    """
-    data = request.get_json(force=True, silent=True)
-    if not data:
-        return jsonify({"action": "reject", "reason": "payload invalide"}), 400
-
-    device_id = str(data.get("device_id", "")).strip()
-    if not device_id:
-        return jsonify({"action": "reject", "reason": "device_id manquant"}), 400
-
-    # ── Vérifier que le device est autorisé ─────────────────────────────
-    device = registry.get_device(device_id)
-    if not device:
-        log.warning("[UNAUTHORIZED] Device inconnu : %s", device_id)
-        _audit("unknown_device", {"device_id": device_id})
-        return jsonify({"action": "reject", "reason": "device inconnu"}), 403
-
-    if device["status"] == DeviceStatus.BLOCKED:
-        log.warning("[BLOCKED] Device bloqué tente d'envoyer des données : %s", device_id)
-        return jsonify({"action": "block", "reason": "device bloqué"}), 403
-
-    # ── Enregistrement de l'événement ───────────────────────────────────
-    _audit("data_received", {
-        "device_id": device_id,
-        "timestamp": data.get("timestamp"),
-    })
-    registry.update_last_seen(device_id)
-
-   # ── Pipeline IA ───────────────────────────────────────────────────────────
-    analysis = _run_ai_pipeline(device_id, data)
- 
-   
-    log.info(
-     "[IA] device=%s | predicted_attack=%s | score=%d | level=%s | action=%s",
-     device_id,
-     analysis.get("predicted_attack", 0),
-     analysis["risk_score"],
-     analysis["level"],
-     analysis["action"],
-  )
-
-    _apply_decision(device_id, analysis)
-# ── Écriture InfluxDB ─────────────────────────────────────────────────────
-   
- 
-    return jsonify({
-        "action":     analysis["action"],
-        "risk_score": analysis["risk_score"],
-        "risk_level": analysis["level"],
-        "reasons":    analysis["reasons"],
-        "confidence": analysis.get("confidence", 0.0),
-        "timestamp":  time.time(),
-    })
 # ---------------------------------------------------------------------------
 # ── Routes d'administration
 # ---------------------------------------------------------------------------
@@ -770,14 +728,12 @@ def start_mqtt_subscriber():
         try:
             data = json.loads(msg.payload.decode("utf-8"))
             device_id = data.get("device_id", "")
-            if not device_id:
+            if not device_id or not registry:
                 return
-            if not registry:
-                return
-            device = registry.get_device(device_id)
-            if not device:
-                return
-            if device["status"] == DeviceStatus.BLOCKED:
+            # Vérification + révocation si device inconnu ou bloqué
+            reason = _check_and_revoke(device_id)
+            if reason:
+                log.warning("[MQTT] Rejet device %s : %s", device_id, reason)
                 return
             registry.update_last_seen(device_id)
             _audit("data_received", {"device_id": device_id, "timestamp": data.get("timestamp")})
