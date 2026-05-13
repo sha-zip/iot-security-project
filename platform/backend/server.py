@@ -305,6 +305,40 @@ def list_devices():
     """Liste tous les devices enregistrés."""
     devices = registry.list_devices()
     return jsonify({"devices": devices})
+ 
+@app.route("/api/v1/devices/add", methods=["POST"])
+@require_api_key
+def add_device():
+    """Ajoute manuellement un device dans le registre (admin uniquement)."""
+    data = request.get_json(force=True, silent=True)
+    if not data:
+        return jsonify({"error": "Payload JSON invalide"}), 400
+
+    device_id   = str(data.get("device_id", "")).strip()
+    fingerprint = str(data.get("fingerprint", "fake-fingerprint")).strip()
+
+    if not device_id:
+        return jsonify({"error": "device_id manquant"}), 400
+
+    # Vérifier si le device existe déjà
+    existing = registry.get_device(device_id)
+    if existing:
+        return jsonify({"error": "device déjà existant", "status": existing["status"]}), 409
+
+    # Enregistrement dans le registre avec statut PENDING
+    registry.register_device(
+        device_id=device_id,
+        fingerprint=fingerprint,
+        certificate_pem=None,
+    )
+
+    audit.log_event("device_added_manually", {"device_id": device_id})
+
+    return jsonify({
+        "status":    "added",
+        "device_id": device_id,
+        "message":   "Device ajouté — en attente d'enrôlement (CSR)"
+    })
 
 
 @app.route("/api/v1/devices/<device_id>/revoke", methods=["POST"])
@@ -327,6 +361,24 @@ def revoke_device(device_id: str):
 
     return jsonify({"status": "revoked", "device_id": device_id})
 
+@app.route("/api/v1/devices/<device_id>/delete", methods=["DELETE"])
+@require_api_key
+def delete_device_route(device_id: str):
+    """Supprime définitivement un device du registre (admin uniquement)."""
+    device = registry.get_device(device_id)
+    if not device:
+        return jsonify({"error": "device inconnu"}), 404
+
+    deleted = registry.delete_device(device_id)
+    if not deleted:
+        return jsonify({"error": "suppression échouée"}), 500
+
+    audit.log_event("device_deleted", {"device_id": device_id, "admin": True})
+
+    return jsonify({
+        "status":    "deleted",
+        "device_id": device_id,
+    })
 
 @app.route("/api/v1/health", methods=["GET"])
 def health():
