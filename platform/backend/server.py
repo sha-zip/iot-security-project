@@ -476,17 +476,27 @@ def _revoke_certificate(device_id: str) -> Optional[str]:
     cert_path = os.path.join(CERTS_DIR, f"{device_id}.crt")
     if not os.path.exists(cert_path):
         return f"Certificat introuvable pour {device_id}"
-
-    cmd = [
+    cfg = os.getenv("OPENSSL_CONF", "/app/pki/openssl.cnf")
+    revoke_cmd = [
         "openssl", "ca",
+        "-config", cfg,
         "-revoke", cert_path,
         "-keyfile", CA_KEY_PATH,
         "-cert",    CA_CERT_PATH,
         "-crl_reason", "keyCompromise",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, check=False)
+    result = subprocess.run(revoke_cmd, capture_output=True, text=True, timeout=15, check=False)
     if result.returncode != 0:
         return result.stderr.strip()
+    gencrl_cmd = [
+        "openssl", "ca",
+        "-config", cfg,
+        "-gencrl",
+        "-out", CRL_PATH,
+    ]
+    result_crl = subprocess.run(gencrl_cmd, capture_output=True, text=True, timeout=15, check=False)
+    if result_crl.returncode != 0:
+        return result_crl.stderr.strip()
     return None
 
 #--------------------------------------------------------------------------
@@ -752,13 +762,18 @@ def start_mqtt_subscriber():
     client.on_message = on_message
  
     try:
-        client.tls_set(
-            ca_certs=CA_CERT_PATH,
-            certfile=MQTT_CLIENT_CERT,
-            keyfile=MQTT_CLIENT_KEY,
-            cert_reqs=ssl.CERT_REQUIRED,
-            tls_version=ssl.PROTOCOL_TLS_CLIENT,
-        )
+        mqtt_ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        mqtt_ssl_ctx.load_cert_chain(certfile=MQTT_CLIENT_CERT, keyfile=MQTT_CLIENT_KEY)
+        mqtt_ssl_ctx.load_verify_locations(cafile=CA_CERT_PATH)
+        if os.path.exists(CRL_PATH):
+            mqtt_ssl_ctx.load_verify_locations(cafile=CRL_PATH)
+            mqtt_ssl_ctx.verify_flags |= ssl.VERIFY_CRL_CHECK_LEAF
+            log.info("[MQTT TLS] CRL activée: %s", CRL_PATH)
+        else:
+            log.warning("[MQTT TLS] CRL absente: %s", CRL_PATH)
+
+        mqtt_ssl_ctx.check_hostname = True
+        client.tls_set_context(mqtt_ssl_ctx)
         client.tls_insecure_set(False)
         client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
         client.loop_start()
@@ -790,6 +805,12 @@ if __name__ == "__main__":
     if os.path.exists(server_cert) and os.path.exists(server_key):
         ssl_ctx.load_cert_chain(certfile=server_cert, keyfile=server_key)
         ssl_ctx.load_verify_locations(cafile=CA_CERT_PATH)
+        if os.path.exists(CRL_PATH):
+            ssl_ctx.load_verify_locations(cafile=CRL_PATH)
+            ssl_ctx.verify_flags |= ssl.VERIFY_CRL_CHECK_LEAF
+            log.info("[TLS] CRL activée: %s", CRL_PATH)
+        else:
+            log.warning("[TLS] CRL absente: %s", CRL_PATH)
         log.info("HTTPS activé sur %s:%d", args.host, args.port)
         app.run(
             host=args.host,
