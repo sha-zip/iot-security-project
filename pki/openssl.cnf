@@ -6,6 +6,7 @@ default_ca=local_ca
 dir=.
 database=index.txt
 serial=serial
+crl=crl.pem
 new_certs_dir=.
 certificate=ca.crt
 private_key=ca.key
