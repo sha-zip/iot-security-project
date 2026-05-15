@@ -224,7 +224,39 @@ def enroll_device():
         log.warning("[REJET CSR] device=%s raison=%s", device_id, reason)
         _audit("csr_rejected", {"device_id": device_id, "reason": reason})
         return jsonify({"status": "rejected", "reason": reason})
+     
+    # ── AJOUT : Vérifier si le device a déjà un certificat valide ────────
 
+    existing_device = registry.get_device(device_id)
+    if existing_device:
+        cert_path = os.path.join(CERTS_DIR, f"{device_id}.crt")
+        if os.path.exists(cert_path):
+            try:
+                with open(cert_path, "r") as f:
+                    existing_cert = x509.load_pem_x509_certificate(
+                        f.read().encode(), default_backend()
+                    )
+                days_left = (existing_cert.not_valid_after - datetime.datetime.utcnow()).days
+                if days_left > 30:
+                    # Cert valide → pas besoin de re-émettre, aller directement à l'auth
+                    log.info("[ENROLL] Device %s déjà enrôlé, cert valide (%d jours) → skip", device_id, days_left)
+                    _audit("reenroll_skipped", {"device_id": device_id, "days_left": days_left})
+                    with open(cert_path, "r") as f:
+                        existing_cert_pem = f.read()
+                    return jsonify({
+                        "status":      "already_enrolled",
+                        "certificate": existing_cert_pem,
+                        "days_remaining": days_left,
+                        "message":     "Certificat valide existant — connexion directe possible"
+                    })
+                else:
+                    # Cert expire bientôt → renouvellement autorisé
+                    log.info("[ENROLL] Device %s : cert expire dans %d jours → renouvellement", device_id, days_left)
+                    _revoke_certificate(device_id)
+                    _audit("cert_renewed", {"device_id": device_id, "days_left": days_left})
+            except Exception as exc: 
+                log.warning("[ENROLL] Impossible de lire cert existant pour %s : %s", device_id, exc)
+                # En cas d'erreur de lecture → on continue et on émet un nouveau cert
     # ── Signature du certificat par la CA ────────────────────────────────
     log.info("[PKI] Signature du certificat pour device=%s", device_id)
     cert_pem, err = _sign_certificate(csr_pem, device_id)
