@@ -212,9 +212,9 @@ class IoTAgent:
       if result["status"] == "already_enrolled":
        log.info("[ENROLL] Déjà enrôlé → cert valide existant, skip re-enrôlement")
        if self._step_store_certificate(result["certificate"]):
-           return True
+        return True
        break
-       
+
       if result["status"] == "cert_generated":
        # ── Organigramme : Certificat signé avec succès
        log.info("[OK] Certificat reçu de la PKI.")
