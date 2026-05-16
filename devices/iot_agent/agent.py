@@ -451,8 +451,8 @@ class IoTAgent:
                  "auth_result":         "Failure",
                  "auth_method":         "mTLS_Software",
                  "secure_element_used": False,
-                 "tls_latency_ms":      self._tls_connect_time,
-                 "failed_attempts_24h": 18,
+                 "tls_latency_ms":      110,
+                 "failed_attempts_24h": 10,
            }
         }
      # ── Scénario 2 : Replay Attack ──────────────────────────
@@ -463,10 +463,10 @@ class IoTAgent:
             "fingerprint": self.se.get_device_fingerprint() if self.se else "",
             "auth": {
                 "auth_result":         "Failure",
-                "auth_method":         "mTLS_Software",
-                "secure_element_used": False,
-                "tls_latency_ms":      450,      # latence très élevée
-                "failed_attempts_24h": 12,
+                "auth_method":         "Challenge_SE",
+                "secure_element_used": True,
+                "tls_latency_ms":      110,      # latence très élevée
+                "failed_attempts_24h": 10,
             }
         }
      # ── Scénario 3 : Clonage ─────────────────────────────────
@@ -479,8 +479,8 @@ class IoTAgent:
                 "auth_result":         "Failure",
                 "auth_method":         "mTLS_Software",  # pas de SE
                 "secure_element_used": False,
-                "tls_latency_ms":      200,
-                "failed_attempts_24h": 8,
+                "tls_latency_ms":      110,
+                "failed_attempts_24h": 10,
             }
         }
     # --------------------------------------------------------------
