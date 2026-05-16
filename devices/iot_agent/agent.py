@@ -425,23 +425,67 @@ class IoTAgent:
 
     def _build_telemetry_payload(self) -> Dict[str, Any]:
      """Construit la charge utile de télémétrie."""
-     import random
-     return {
-       "device_id":   self.device_id,
-       "timestamp":   time.time(),
-       "fingerprint": self.se.get_device_fingerprint() if self.se else "",
-       "auth": {
-         "auth_result":         "Success" if self.state == AgentState.CONNECTED else "Failure",
-         "auth_method":         self._get_auth_method(),
-         "secure_element_used": True if self.se else False,
-         "tls_latency_ms":      self._tls_connect_time,
-         "failed_attempts_24h": self._failed_attempts,
-        }
-       }
+     attack_mode = os.getenv("ATTACK_MODE", "none")
+     if attack_mode == "none":
+         import random
+         return {
+             "device_id":   self.device_id,
+             "timestamp":   time.time(),
+             "fingerprint": self.se.get_device_fingerprint() if self.se else "",
+             "auth": {
+               "auth_result":         "Success" if self.state == AgentState.CONNECTED else "Failure",
+               "auth_method":         self._get_auth_method(),
+               "secure_element_used": True if self.se else False,
+               "tls_latency_ms":      self._tls_connect_time,
+               "failed_attempts_24h": self._failed_attempts,
+             }
+          }
 
-    # ------------------------------------------------------------------
+     # ── Scénario 1 : Brute Force ─────────────────────────────
+     elif attack_mode == "brute_force":
+           return {
+               "device_id":   self.device_id,
+               "timestamp":   time.time(),
+               "fingerprint": self.se.get_device_fingerprint() if self.se else "",
+               "auth": {
+                 "auth_result":         "Failure",
+                 "auth_method":         "mTLS_Software",
+                 "secure_element_used": False,
+                 "tls_latency_ms":      self._tls_connect_time,
+                 "failed_attempts_24h": 18,
+           }
+        }
+     # ── Scénario 2 : Replay Attack ──────────────────────────
+     elif attack_mode == "replay":
+           return {
+            "device_id":   self.device_id,
+            "timestamp":   time.time() - 9999,  # timestamp très ancien
+            "fingerprint": self.se.get_device_fingerprint() if self.se else "",
+            "auth": {
+                "auth_result":         "Failure",
+                "auth_method":         "mTLS_Software",
+                "secure_element_used": False,
+                "tls_latency_ms":      450,      # latence très élevée
+                "failed_attempts_24h": 12,
+            }
+        }
+     # ── Scénario 3 : Clonage ─────────────────────────────────
+     elif attack_mode == "cloning":
+        return {
+            "device_id":   self.device_id,
+            "timestamp":   time.time(),
+            "fingerprint": "cloned-fake-fingerprint-0000",  # fingerprint usurpé
+            "auth": {
+                "auth_result":         "Failure",
+                "auth_method":         "mTLS_Software",  # pas de SE
+                "secure_element_used": False,
+                "tls_latency_ms":      200,
+                "failed_attempts_24h": 8,
+            }
+        }
+    # --------------------------------------------------------------
     # Callbacks MQTT
-    # ------------------------------------------------------------------
+    # --------------------------------------------------------------
 
     def _on_mqtt_connect(self, client, userdata, flags, rc, properties=None):
      if rc == 0:
