@@ -13,10 +13,10 @@ Score breakdown (max 100):
 # Risk weight for each detected attack class
 ATTACK_WEIGHTS = {
     "None":       0,
-    "Bruteforce": 40,
-    "Replay":     45,
-    "Clone":      50,
-    "MITM":       50,
+    "Bruteforce": 45,
+    "Replay":     50,
+    "Clone":      55,
+    "MITM":       55,
 }
 
 

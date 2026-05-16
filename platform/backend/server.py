@@ -513,7 +513,7 @@ def _extract_auth_row(data: Dict[str, Any]) -> Dict[str, Any]:
      "auth_result":         auth.get("auth_result", "Failure"),
      "secure_element_used": "True" if auth.get("secure_element_used", False) else "False",
      "auth_method":         auth.get("auth_method", "mTLS_Software"),
-     "attack_type":         "None",
+     "attack_type":         auth.get("attack_type","None"),
     }
 # ---------------------------------------------------------------------------
 # Pipeline IA — Analyse comportementale
@@ -530,6 +530,22 @@ def _run_ai_pipeline(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
  
     try:
      auth_row = _extract_auth_row(data)
+     #forced attack
+     forced_attack = auth_row.get("attack_type", "None")
+     if forced_attack != "None":
+      features_list = extract_features(auth_row)
+      row = dit(zip(FEATURE_NAMES, features_list))
+      risk = compute_risk(row, forced_attack)
+      level, reasons = explain(row, forced_attack, 95.0, risk)
+      return {
+       "action":  _decide(risk),
+       "risk_level": risk,
+       "level":      level,
+       "reasons":    reasons,
+       "confidence": 95.0,
+       "predicted_attack": forced_attack,
+     }
+     #pipeline normal
      import pandas as pd
      features_list = extract_features(auth_row)
      row = dict(zip(FEATURE_NAMES, features_list))
@@ -571,8 +587,6 @@ def _decide(risk: int) -> str:
     """Convertit un risk score (0-100) en action."""
     if risk >= RISK_THRESHOLD_BLOCK:
         return "block"
-    if risk >= RISK_THRESHOLD_MONITOR:
-        return "enhanced_monitoring"
     return "allow"
  
  
@@ -585,7 +599,7 @@ def _fallback_heuristic(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     auth_result = str(auth.get("auth_result", "")).lower()
     if auth_result in ("failure", "0"):
         risk += 10
-        reasons.append("Authentification échouée")
+        reasons.append("Authentification echouee")
  
     fails = int(auth.get("failed_attempts_24h", 0))
     if fails > 5:
@@ -643,16 +657,7 @@ def _apply_decision(device_id: str, analysis: Dict[str, Any]) -> None:
         if INFLUX_AVAILABLE:
             write_device_status(device_id, "blocked")
  
-    elif action == "enhanced_monitoring":
-        log.warning("[MONITORING+] %s (score=%d)", device_id, risk)
-        registry.update_device_status(device_id, DeviceStatus.MONITORED)
-        _audit("enhanced_monitoring", {
-            "device_id":  device_id,
-            "risk_score": risk,
-        })
-        if INFLUX_AVAILABLE:
-            write_device_status(device_id, "monitored")
- 
+
     # Toujours notifier le device, quelle que soit l'action
     _notify_device(device_id, action, risk, reasons, predicted, level, confidence)
  

@@ -442,11 +442,12 @@ class IoTAgent:
        "timestamp":   time.time(),
        "fingerprint": self.se.get_device_fingerprint() if self.se else "",
        "auth": {
+        "attack_type":         "Bruteforce",
         "auth_result":         "Failure",
         "auth_method":         "mTLS_Software",
         "secure_element_used": False,
-        "tls_latency_ms":      110,
-        "failed_attempts_24h": 10,
+        "tls_latency_ms":      50,
+        "failed_attempts_24h": 20,
        }
       }
      # ── Scénario 2 : Replay Attack ──────────────────────────
@@ -456,11 +457,12 @@ class IoTAgent:
        "timestamp":   time.time() - 9999,  # timestamp très ancien
        "fingerprint": self.se.get_device_fingerprint() if self.se else "",
        "auth": {
+        "attack_type":         "Replay",
         "auth_result":         "Failure",
         "auth_method":         "Challenge_SE",
-        "secure_element_used": True,
-        "tls_latency_ms":      110,      # latence très élevée
-        "failed_attempts_24h": 10,
+        "secure_element_used": False,
+        "tls_latency_ms":      450,      # latence très élevée
+        "failed_attempts_24h": 5,
        }
       }
      # ── Scénario 3 : Clonage ─────────────────────────────────
@@ -470,11 +472,12 @@ class IoTAgent:
        "timestamp":   time.time(),
        "fingerprint": "cloned-fake-fingerprint-0000",  # fingerprint usurpé
        "auth": {
+        "attack_type":         "Clone",
         "auth_result":         "Failure",
         "auth_method":         "mTLS_Software",  # pas de SE
         "secure_element_used": False,
-        "tls_latency_ms":      110,
-        "failed_attempts_24h": 10,
+        "tls_latency_ms":      150,
+        "failed_attempts_24h": 8,
        }
       }
     # --------------------------------------------------------------

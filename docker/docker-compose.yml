@@ -27,7 +27,14 @@ services:
       - iot-net
      volumes:
       - grafana-data:/var/lib/grafana
-
+     environment:
+      - GF_SMTP_ENABLED=true
+      - GF_SMTP_HOST=smtp.gmail.com:587
+      - GF_SMTP_USER=nadinetouil24@gmail.com
+      - GF_SMTP_PASSWORD=vqgz lnil ikci bgwm
+      - GF_SMTP_FROM_ADDRESS=nadinetouil24@gmail.com
+      - GF_SMTP_FROM_NAME=Grafana IoT
+      - GF_SMTP_SKIP_VERIFY=true
     mqtt:
      image: eclipse-mosquitto:2
      container_name: mqtt-broker
