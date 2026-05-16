@@ -319,7 +319,7 @@ class IoTAgent:
      log.info("[ÉTAPE 6] Tentative de connexion TLS au broker MQTT.")
      self.state = AgentState.CONNECTING
 
-     client_id = f"iot-{self.device_id}"
+     client_id = self.device_id
      self.mqtt_client = mqtt.Client(
       client_id=client_id,
       protocol=mqtt.MQTTv5,
@@ -427,62 +427,62 @@ class IoTAgent:
      """Construit la charge utile de télémétrie."""
      attack_mode = os.getenv("ATTACK_MODE", "none")
      if attack_mode == "none":
-         import random
-         return {
-             "device_id":   self.device_id,
-             "timestamp":   time.time(),
-             "fingerprint": self.se.get_device_fingerprint() if self.se else "",
-             "auth": {
-               "auth_result":         "Success" if self.state == AgentState.CONNECTED else "Failure",
-               "auth_method":         self._get_auth_method(),
-               "secure_element_used": True if self.se else False,
-               "tls_latency_ms":      self._tls_connect_time,
-               "failed_attempts_24h": self._failed_attempts,
-             }
-          }
+      import random
+      return {
+       "device_id":   self.device_id,
+       "timestamp":   time.time(),
+       "fingerprint": self.se.get_device_fingerprint() if self.se else "",
+       "auth": {
+        "auth_result":         "Success" if self.state == AgentState.CONNECTED else "Failure",
+        "auth_method":         self._get_auth_method(),
+        "secure_element_used": True if self.se else False,
+        "tls_latency_ms":      self._tls_connect_time,
+        "failed_attempts_24h": self._failed_attempts,
+       }
+     }
 
      # ── Scénario 1 : Brute Force ─────────────────────────────
      elif attack_mode == "brute_force":
-           return {
-               "device_id":   self.device_id,
-               "timestamp":   time.time(),
-               "fingerprint": self.se.get_device_fingerprint() if self.se else "",
-               "auth": {
-                 "auth_result":         "Failure",
-                 "auth_method":         "mTLS_Software",
-                 "secure_element_used": False,
-                 "tls_latency_ms":      110,
-                 "failed_attempts_24h": 10,
-           }
-        }
+      return {
+       "device_id":   self.device_id,
+       "timestamp":   time.time(),
+       "fingerprint": self.se.get_device_fingerprint() if self.se else "",
+       "auth": {
+        "auth_result":         "Failure",
+        "auth_method":         "mTLS_Software",
+        "secure_element_used": False,
+        "tls_latency_ms":      110,
+        "failed_attempts_24h": 10,
+       }
+      }
      # ── Scénario 2 : Replay Attack ──────────────────────────
      elif attack_mode == "replay":
-           return {
-            "device_id":   self.device_id,
-            "timestamp":   time.time() - 9999,  # timestamp très ancien
-            "fingerprint": self.se.get_device_fingerprint() if self.se else "",
-            "auth": {
-                "auth_result":         "Failure",
-                "auth_method":         "Challenge_SE",
-                "secure_element_used": True,
-                "tls_latency_ms":      110,      # latence très élevée
-                "failed_attempts_24h": 10,
-            }
-        }
+      return {
+       "device_id":   self.device_id,
+       "timestamp":   time.time() - 9999,  # timestamp très ancien
+       "fingerprint": self.se.get_device_fingerprint() if self.se else "",
+       "auth": {
+        "auth_result":         "Failure",
+        "auth_method":         "Challenge_SE",
+        "secure_element_used": True,
+        "tls_latency_ms":      110,      # latence très élevée
+        "failed_attempts_24h": 10,
+       }
+      }
      # ── Scénario 3 : Clonage ─────────────────────────────────
      elif attack_mode == "cloning":
-        return {
-            "device_id":   self.device_id,
-            "timestamp":   time.time(),
-            "fingerprint": "cloned-fake-fingerprint-0000",  # fingerprint usurpé
-            "auth": {
-                "auth_result":         "Failure",
-                "auth_method":         "mTLS_Software",  # pas de SE
-                "secure_element_used": False,
-                "tls_latency_ms":      110,
-                "failed_attempts_24h": 10,
-            }
-        }
+      return {
+       "device_id":   self.device_id,
+       "timestamp":   time.time(),
+       "fingerprint": "cloned-fake-fingerprint-0000",  # fingerprint usurpé
+       "auth": {
+        "auth_result":         "Failure",
+        "auth_method":         "mTLS_Software",  # pas de SE
+        "secure_element_used": False,
+        "tls_latency_ms":      110,
+        "failed_attempts_24h": 10,
+       }
+      }
     # --------------------------------------------------------------
     # Callbacks MQTT
     # --------------------------------------------------------------
