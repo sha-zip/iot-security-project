@@ -100,6 +100,7 @@ services:
       - SE_KEY_LABEL=iot-device-key-001
       - PKCS11_LIB=/usr/lib/softhsm/libsofthsm2.so
       - SEND_INTERVAL=5.0
+      - ATTACK_MODE=brute_force
      restart: unless-stopped
      networks:
       - iot-net
@@ -130,6 +131,7 @@ services:
       - SE_KEY_LABEL=iot-device-key-002
       - PKCS11_LIB=/usr/lib/softhsm/libsofthsm2.so
       - SEND_INTERVAL=5.0
+      - ATTACK_MODE=replay
      networks:
       - iot-net
 
@@ -159,6 +161,7 @@ services:
       - SE_KEY_LABEL=iot-device-key-003
       - PKCS11_LIB=/usr/lib/softhsm/libsofthsm2.so
       - SEND_INTERVAL=5.0
+      - ATTACK_MODE=cloning
      networks:
       - iot-net
 networks:
