@@ -534,7 +534,7 @@ def _run_ai_pipeline(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
      forced_attack = auth_row.get("attack_type", "None")
      if forced_attack != "None":
       features_list = extract_features(auth_row)
-      row = dit(zip(FEATURE_NAMES, features_list))
+      row = dict(zip(FEATURE_NAMES, features_list))
       risk = compute_risk(row, forced_attack)
       level, reasons = explain(row, forced_attack, 95.0, risk)
       return {
