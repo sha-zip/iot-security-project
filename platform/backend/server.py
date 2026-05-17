@@ -722,6 +722,7 @@ def _notify_device(
             topic, payload=payload, qos=1,
             hostname=MQTT_BROKER, port=MQTT_PORT,
             tls=tls_dict, transport="tcp",
+            tls_insecure=True,
         )
         log.info("[MQTT→] device=%s action=%s attack=%s score=%d",
                  device_id, action, attack_type, risk_score)
