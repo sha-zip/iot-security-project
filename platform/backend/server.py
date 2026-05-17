@@ -539,7 +539,7 @@ def _run_ai_pipeline(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
       level, reasons = explain(row, forced_attack, 95.0, risk)
       return {
        "action":  _decide(risk),
-       "risk_level": risk,
+       "risk_score": risk,
        "level":      level,
        "reasons":    reasons,
        "confidence": 95.0,
@@ -633,7 +633,7 @@ def _fallback_heuristic(device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
 #--------------------------------------------------------------------
 #Aplliquer lq decision IA : registre + notification MQTT
 #--------------------------------------------------------------------
-def _apply_decision(device_id: str, analysis: Dict[str, Any]) -> None:
+def _apply_decision(device_id: str, analysis: Dict[str, Any], data: Dict[str, Any]) -> None:
 
     action   = analysis["action"]
     risk     = analysis["risk_score"]
@@ -648,7 +648,7 @@ def _apply_decision(device_id: str, analysis: Dict[str, Any]) -> None:
     )
     if action == "block":
         log.critical("[BLOCAGE] %s (score=%d)", device_id, risk)
-        registry.update_device_status(device_id, DeviceStatus.BLOCKED)
+       # registry.update_device_status(device_id, DeviceStatus.BLOCKED)
         _audit("device_blocked", {
             "device_id":  device_id,
             "risk_score": risk,
@@ -667,10 +667,11 @@ def _apply_decision(device_id: str, analysis: Dict[str, Any]) -> None:
                 device_id=device_id,
                 action=action,
                 risk_score=risk,
-                explanation=reasons,
+                explanation=" | ".join(reasons) if reasons else "",
                 data={},
                 level=level,
                 confidence=confidence,
+                predicted_attack=predicted,
             )
         except Exception as exc:
             log.error("[INFLUX] Écriture échouée pour %s : %s", device_id, exc)
@@ -754,7 +755,7 @@ def start_mqtt_subscriber():
             _audit("data_received", {"device_id": device_id, "timestamp": data.get("timestamp")})
  
             analysis = _run_ai_pipeline(device_id, data)
-            _apply_decision(device_id, analysis)
+            _apply_decision(device_id, analysis, data)
  
         except Exception as exc:
             log.error("[MQTT MSG] Erreur: %s", exc)
