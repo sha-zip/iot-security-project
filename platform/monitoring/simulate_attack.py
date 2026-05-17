@@ -95,7 +95,7 @@ def main():
      client.loop_start()
      time.sleep(1.0)
     except Exception as exc:
-     print(f"[ERREUR] impossible de se connecter au broker mqtt : type={type(exec).__name__} repr={exc!r}")
+     print(f"[ERREUR] impossible de se connecter au broker mqtt : type={type(exc).__name__} repr={exc!r}")
      return
 
     for i in range(1, NB_REQUETES + 1):
@@ -105,7 +105,7 @@ def main():
       "auth": {
        "auth_result"         : "Failure",
        "failed_attempts_24h" : 10 + i,
-       "latency_ms"          : 320.0,
+       "tls_latency_ms"          : 320.0,
        "attack_type"         : "Bruteforce",
        "secure_element"      : "FALSE",
        "auth_method"         : "mTLS_Software",
