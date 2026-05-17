@@ -34,7 +34,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Configuration
 # ---------------------------------------------------------------------------
 
-BACKEND_URL  = "http://localhost:8443/api/v1/data"   # adapter si HTTPS
+BACKEND_URL  = "https://localhost:8443/api/v1/data"   # adapter si HTTPS
 DEVICE_ID    = "iot-device-001"
 NB_REQUETES  = 15
 DELAI        = 0.5   # secondes entre chaque requête
