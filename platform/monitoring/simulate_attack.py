@@ -81,8 +81,6 @@ for i in range(1, NB_REQUETES + 1):
         # Affichage coloré selon le niveau de risque
         if action == "block":
             status = "🔴 BLOQUE"
-        elif action == "enhanced_monitoring":
-            status = "🟠 SURVEILLANCE"
         else:
             status = "🟢 AUTORISE"
 
